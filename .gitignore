@@ -1,0 +1,27 @@
+# Virtual Environment
+uniwise_env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.py[cod]
+
+# Django
+*.log
+db.sqlite3
+media/
+staticfiles/
+chroma_db/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
