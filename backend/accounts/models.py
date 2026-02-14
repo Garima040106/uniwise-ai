@@ -23,9 +23,15 @@ class UserProfile(models.Model):
         ("medium", "Medium"),
         ("fast", "Fast"),
     ]
+    ROLE_CHOICES = [
+        ("student", "Student"),
+        ("professor", "Professor"),
+        ("admin", "Admin"),
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
     university = models.ForeignKey(University, on_delete=models.SET_NULL, null=True, blank=True)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
     year_of_study = models.IntegerField(choices=YEAR_CHOICES, default=1)
     field_of_study = models.CharField(max_length=255, blank=True)
     bio = models.TextField(blank=True)
@@ -35,5 +41,10 @@ class UserProfile(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.user.username} - {self.university}"
-# Create your models here.
+        return f"{self.user.username} ({self.role})"
+
+    def is_professor(self):
+        return self.role == "professor"
+
+    def is_student(self):
+        return self.role == "student"

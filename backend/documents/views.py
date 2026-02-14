@@ -6,12 +6,20 @@ from rest_framework.response import Response
 from django.conf import settings
 from .models import Document, DocumentChunk
 from .utils import extract_text_from_file, chunk_text
+from ai_engine.rag import add_document_to_rag, delete_document_from_rag
+
+
+def get_university_id(user):
+    profile = getattr(user, "profile", None)
+    if profile and profile.university:
+        return profile.university.id
+    return None
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def upload_document(request):
-    """Upload and process a document"""
+    """Professor uploads doc → stored in university RAG collection"""
     if "file" not in request.FILES:
         return Response({"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -36,20 +44,27 @@ def upload_document(request):
     )
 
     try:
-        file_path = doc.file.path
-        extracted_text = extract_text_from_file(file_path)
+        extracted_text = extract_text_from_file(doc.file.path)
         doc.extracted_text = extracted_text
         doc.status = "completed"
         doc.is_processed = True
         doc.save()
 
         chunks = chunk_text(extracted_text)
+        chunk_objects = []
         for i, chunk in enumerate(chunks):
-            DocumentChunk.objects.create(
+            chunk_obj = DocumentChunk.objects.create(
                 document=doc,
                 content=chunk,
                 chunk_index=i,
             )
+            chunk_objects.append(chunk_obj)
+
+        # Store in RAG (university-isolated)
+        university_id = get_university_id(request.user)
+        rag_chunks = 0
+        if university_id:
+            rag_chunks = add_document_to_rag(doc, chunk_objects, university_id, course_id)
 
         return Response({
             "id": doc.id,
@@ -57,8 +72,9 @@ def upload_document(request):
             "status": doc.status,
             "file_type": doc.file_type,
             "chunks_created": len(chunks),
-            "text_length": len(extracted_text),
-            "message": "Document uploaded and processed successfully!"
+            "rag_indexed": rag_chunks,
+            "university_isolated": university_id is not None,
+            "message": "Document uploaded and indexed in university RAG!"
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
@@ -70,14 +86,25 @@ def upload_document(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_documents(request):
-    """List all documents for current user"""
-    documents = Document.objects.filter(uploaded_by=request.user).order_by("-created_at")
+    """List documents - professors see their uploads, students see university docs"""
+    profile = getattr(request.user, "profile", None)
+    if profile and profile.role == "professor":
+        documents = Document.objects.filter(uploaded_by=request.user).order_by("-created_at")
+    else:
+        if profile and profile.university:
+            documents = Document.objects.filter(
+                uploaded_by__profile__university=profile.university
+            ).order_by("-created_at")
+        else:
+            documents = Document.objects.filter(uploaded_by=request.user).order_by("-created_at")
+
     data = [{
         "id": doc.id,
         "title": doc.title,
         "file_type": doc.file_type,
         "status": doc.status,
         "is_processed": doc.is_processed,
+        "uploaded_by": doc.uploaded_by.username,
         "created_at": doc.created_at,
     } for doc in documents]
     return Response(data)
@@ -86,9 +113,8 @@ def list_documents(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def document_detail(request, doc_id):
-    """Get document details"""
     try:
-        doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
+        doc = Document.objects.get(id=doc_id)
         return Response({
             "id": doc.id,
             "title": doc.title,
@@ -97,6 +123,7 @@ def document_detail(request, doc_id):
             "is_processed": doc.is_processed,
             "text_length": len(doc.extracted_text),
             "chunks": doc.chunks.count(),
+            "uploaded_by": doc.uploaded_by.username,
             "created_at": doc.created_at,
         })
     except Document.DoesNotExist:
@@ -106,12 +133,13 @@ def document_detail(request, doc_id):
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_document(request, doc_id):
-    """Delete a document"""
     try:
         doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
+        university_id = get_university_id(request.user)
+        if university_id:
+            delete_document_from_rag(doc.id, university_id)
         doc.file.delete()
         doc.delete()
-        return Response({"message": "Document deleted successfully"})
+        return Response({"message": "Document deleted from system and RAG"})
     except Document.DoesNotExist:
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
-# Create your views here.

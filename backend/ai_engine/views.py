@@ -13,9 +13,8 @@ from .utils import (
     generate_summary,
     extract_facts,
     query_ollama,
+    answer_question_rag,
 )
-
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_flashcards_view(request):
@@ -246,3 +245,32 @@ def ollama_status(request):
         return Response({"status": "offline", "message": response})
     return Response({"status": "online", "model": "llama3.2:3b", "response": response})
 # Create your views here.
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ask_question(request):
+    """
+    Core RAG Q&A - student asks question, AI answers from university docs ONLY
+    """
+    question = request.data.get("question")
+    course_id = request.data.get("course_id")
+
+    if not question:
+        return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    profile = getattr(request.user, "profile", None)
+    university_id = profile.university.id if profile and profile.university else None
+
+    if not university_id:
+        return Response({
+            "error": "You must be affiliated with a university to use this feature"
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    result = answer_question_rag(question, university_id, course_id)
+
+    return Response({
+        "question": question,
+        "answer": result["answer"],
+        "sources": result["sources"],
+        "found_in_docs": result["found_in_docs"],
+        "university_id": university_id,
+    })
