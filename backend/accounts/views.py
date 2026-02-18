@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
+from django.middleware.csrf import get_token
 from .models import UserProfile, University
 
 
@@ -50,12 +51,14 @@ def login_view(request):
     user = authenticate(request, username=username, password=password)
     if user:
         login(request, user)
+        csrf_token = get_token(request)
         profile = getattr(user, "profile", None)
         return Response({
             "message": "Login successful!",
             "user_id": user.id,
             "username": user.username,
             "university": profile.university.name if profile and profile.university else None,
+            "csrfToken": csrf_token,
         })
     return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 

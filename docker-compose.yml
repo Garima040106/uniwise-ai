@@ -15,8 +15,9 @@ services:
       - DEBUG=True
       - SECRET_KEY=uniwise-docker-secret-key
       - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://172.17.0.1:11434
       - OLLAMA_MODEL=llama3.2:3b
+      - DJANGO_SETTINGS_MODULE=uniwise.settings
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

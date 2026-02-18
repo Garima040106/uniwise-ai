@@ -1,8 +1,12 @@
 import axios from 'axios';
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL
+  || `${window.location.protocol}//${window.location.hostname}:8000/api`;
+
 const API = axios.create({
-  baseURL: 'http://127.0.0.1:8000/api',
+  baseURL: API_BASE_URL,
   withCredentials: true,
+  timeout: 240000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -57,15 +61,19 @@ export const askQuestion = (data) => API.post('/ai/ask/', data);
 export const listFlashcards = () => API.get('/flashcards/list/');
 export const getFlashcardsDueToday = () => API.get('/flashcards/due-today/');
 export const reviewFlashcard = (id, data) => API.post(`/flashcards/${id}/review/`, data);
+export const deleteFlashcard = (id) => API.delete(`/flashcards/${id}/delete/`);
 
 // Quizzes
 export const listQuizzes = () => API.get('/quizzes/list/');
 export const getQuiz = (id) => API.get(`/quizzes/${id}/`);
 export const submitQuiz = (id, data) => API.post(`/quizzes/${id}/submit/`, data);
+export const deleteQuiz = (id) => API.delete(`/quizzes/${id}/delete/`);
 export const getQuizHistory = () => API.get('/quizzes/history/');
 
 // Analytics
 export const getDashboard = () => API.get('/analytics/dashboard/');
+export const getDocumentProgress = (documentId) =>
+  API.get('/analytics/document-progress/', { params: documentId ? { document_id: documentId } : {} });
 export const getLearningCurve = () => API.get('/analytics/learning-curve/');
 export const getSkillBreakdown = () => API.get('/analytics/skill-breakdown/');
 

@@ -3,8 +3,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import LearningProgress, StudySession, SkillSnapshot
-from quizzes.models import QuizAttempt
-from flashcards.models import FlashcardReview
+from quizzes.models import QuizAttempt, Question, QuestionResponse
+from flashcards.models import Flashcard, FlashcardReview
+from documents.models import Document
 
 
 @api_view(["GET"])
@@ -122,6 +123,74 @@ def skill_breakdown(request):
         "study_streak": p.study_streak_days,
         "last_studied": p.last_studied,
     } for p in progress]
+
+    return Response(data)
+
+
+def _get_visible_documents(user):
+    profile = getattr(user, "profile", None)
+    if profile and profile.role == "professor":
+        return Document.objects.filter(uploaded_by=user).order_by("-created_at")
+    if profile and profile.university:
+        return Document.objects.filter(
+            uploaded_by__profile__university=profile.university
+        ).order_by("-created_at")
+    return Document.objects.filter(uploaded_by=user).order_by("-created_at")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def document_progress(request):
+    """Estimated learning coverage (1-100) for each visible document."""
+    user = request.user
+    doc_id = request.query_params.get("document_id")
+
+    documents = _get_visible_documents(user)
+    if doc_id:
+        documents = documents.filter(id=doc_id)
+
+    data = []
+    for doc in documents:
+        total_questions = Question.objects.filter(quiz__document=doc).count()
+        attempted_questions = QuestionResponse.objects.filter(
+            attempt__user=user,
+            attempt__completed=True,
+            question__quiz__document=doc,
+        ).values("question_id").distinct().count()
+
+        total_flashcards = Flashcard.objects.filter(document=doc).count()
+        reviewed_flashcards = FlashcardReview.objects.filter(
+            user=user,
+            flashcard__document=doc,
+        ).values("flashcard_id").distinct().count()
+
+        available_items = total_questions + total_flashcards
+        covered_items = attempted_questions + reviewed_flashcards
+        if available_items > 0:
+            progress_score = round((covered_items / available_items) * 100)
+        else:
+            chunk_count = doc.chunks.count()
+            activity_count = attempted_questions + reviewed_flashcards
+            progress_score = round((activity_count / max(chunk_count, 1)) * 100) if chunk_count else 0
+
+        if doc.is_processed:
+            progress_score = max(1, progress_score)
+        progress_score = min(100, progress_score)
+
+        data.append({
+            "document_id": doc.id,
+            "title": doc.title,
+            "progress_score": progress_score,
+            "question_coverage": {
+                "covered": attempted_questions,
+                "total": total_questions,
+            },
+            "flashcard_coverage": {
+                "covered": reviewed_flashcards,
+                "total": total_flashcards,
+            },
+            "is_processed": doc.is_processed,
+        })
 
     return Response(data)
 # Create your views here.

@@ -17,6 +17,11 @@ def list_quizzes(request):
         "difficulty": q.difficulty,
         "question_count": q.questions.count(),
         "time_limit_minutes": q.time_limit_minutes,
+        "completed": QuizAttempt.objects.filter(
+            user=request.user,
+            quiz=q,
+            completed=True,
+        ).exists(),
         "created_at": q.created_at,
     } for q in quizzes]
     return Response(data)
@@ -105,12 +110,37 @@ def submit_quiz(request, quiz_id):
     attempt.percentage = percentage
     attempt.save()
 
+    correct_count = sum(1 for item in results if item["is_correct"])
+    incorrect_count = sum(1 for item in results if not item["is_correct"] and item["your_answer"])
+    unanswered_count = sum(1 for item in results if not item["your_answer"])
+
+    if percentage >= 80:
+        summary = "Strong performance. Your understanding is solid."
+        recommendation = "Try hard-level quizzes from the same document to deepen retention."
+    elif percentage >= 60:
+        summary = "Good progress with some gaps to revise."
+        recommendation = "Review missed concepts, then retake a medium quiz."
+    else:
+        summary = "Foundational concepts need reinforcement."
+        recommendation = "Revise the document and retry an easy quiz before moving up."
+
+    missed_questions = [item["question"] for item in results if not item["is_correct"]][:3]
+
     return Response({
         "message": "Quiz submitted!",
         "score": score,
         "total_marks": total_marks,
         "percentage": percentage,
         "results": results,
+        "analysis": {
+            "summary": summary,
+            "correct_count": correct_count,
+            "incorrect_count": incorrect_count,
+            "unanswered_count": unanswered_count,
+            "accuracy": round((correct_count / len(results)) * 100, 2) if results else 0,
+            "focus_topics": missed_questions,
+            "recommendation": recommendation,
+        },
     })
 
 
@@ -132,4 +162,17 @@ def quiz_history(request):
     } for a in attempts]
 
     return Response(data)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_quiz(request, quiz_id):
+    """Delete a quiz owned by current user"""
+    try:
+        quiz = Quiz.objects.get(id=quiz_id, created_by=request.user)
+    except Quiz.DoesNotExist:
+        return Response({"error": "Quiz not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    quiz.delete()
+    return Response({"message": "Quiz deleted"}, status=status.HTTP_200_OK)
 # Create your views here.

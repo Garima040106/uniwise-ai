@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { listFlashcards, getFlashcardsDueToday, reviewFlashcard, generateFlashcards, listDocuments } from '../services/api';
+import { listFlashcards, getFlashcardsDueToday, reviewFlashcard, generateFlashcards, listDocuments, deleteFlashcard } from '../services/api';
 
 export default function Flashcards() {
   const [flashcards, setFlashcards] = useState([]);
@@ -47,7 +47,11 @@ export default function Flashcards() {
       setMessage(`✅ Generated ${res.data.flashcards.length} flashcards!`);
       fetchData();
     } catch (err) {
-      setMessage('❌ Failed to generate flashcards');
+      const backendError = err?.response?.data?.error;
+      const timeoutMsg = err?.code === 'ECONNABORTED'
+        ? ' Request timed out. Try 3 cards first on CPU-only mode.'
+        : '';
+      setMessage(`❌ Failed to generate flashcards.${backendError ? ` ${backendError}` : ''}${timeoutMsg}`);
     } finally {
       setGenerating(false);
     }
@@ -59,6 +63,17 @@ export default function Flashcards() {
       setFlashcards(flashcards.filter(f => f.id !== cardId));
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleDeleteCard = async (cardId) => {
+    try {
+      await deleteFlashcard(cardId);
+      setFlashcards(flashcards.filter((f) => f.id !== cardId));
+      setDueToday((prev) => Math.max((prev || 0) - 1, 0));
+    } catch (err) {
+      console.error(err);
+      setMessage('❌ Failed to delete flashcard');
     }
   };
 
@@ -147,7 +162,7 @@ export default function Flashcards() {
                 <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}
                   onClick={(e) => e.stopPropagation()}>
                   <button className="btn btn-danger" style={{ flex: 1, padding: '6px' }}
-                    onClick={() => handleReview(card.id, 1)}>Again</button>
+                    onClick={() => handleDeleteCard(card.id)}>Delete</button>
                   <button className="btn btn-secondary" style={{ flex: 1, padding: '6px' }}
                     onClick={() => handleReview(card.id, 2)}>Hard</button>
                   <button className="btn btn-secondary" style={{ flex: 1, padding: '6px' }}

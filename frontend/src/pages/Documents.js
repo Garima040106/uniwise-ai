@@ -35,9 +35,11 @@ export default function Documents() {
       setMessage(`✅ ${res.data.message}`);
       fetchDocs();
     } catch (err) {
-      setMessage('❌ Upload failed. Check file type and size.');
+      const backendError = err?.response?.data?.error;
+      setMessage(`❌ Upload failed.${backendError ? ` ${backendError}` : ''}`);
     } finally {
       setUploading(false);
+      e.target.value = '';
     }
   };
 

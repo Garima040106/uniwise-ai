@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
-import { listQuizzes, getQuiz, submitQuiz, generateQuiz, listDocuments } from '../services/api';
+import {
+  listQuizzes,
+  getQuiz,
+  submitQuiz,
+  generateQuiz,
+  listDocuments,
+  deleteQuiz,
+} from '../services/api';
 
 export default function Quiz() {
   const [quizzes, setQuizzes] = useState([]);
@@ -31,12 +38,17 @@ export default function Quiz() {
   const handleGenerate = async () => {
     if (!selectedDoc) return setMessage('Please select a document');
     setGenerating(true);
+    setMessage('');
     try {
       await generateQuiz({ document_id: selectedDoc, num_questions: numQuestions, difficulty, title: `Quiz - ${difficulty}` });
       setMessage('✅ Quiz generated!');
       fetchData();
     } catch (err) {
-      setMessage('❌ Failed to generate quiz');
+      const backendError = err?.response?.data?.error;
+      const timeoutMsg = err?.code === 'ECONNABORTED'
+        ? ' Request timed out. Try 3 questions first on CPU-only mode.'
+        : '';
+      setMessage(`❌ Failed to generate quiz.${backendError ? ` ${backendError}` : ''}${timeoutMsg}`);
     } finally {
       setGenerating(false);
     }
@@ -49,8 +61,22 @@ export default function Quiz() {
     setResult(null);
   };
 
+  const handleDeleteQuiz = async (quizId) => {
+    if (!window.confirm('Delete this quiz?')) return;
+    try {
+      await deleteQuiz(quizId);
+      setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
+    } catch (err) {
+      console.error(err);
+      setMessage('❌ Failed to delete quiz.');
+    }
+  };
+
   const handleSubmit = async () => {
     const res = await submitQuiz(activeQuiz.id, { answers });
+    setQuizzes((prev) => prev.map((q) => (
+      q.id === activeQuiz.id ? { ...q, completed: true } : q
+    )));
     setResult(res.data);
   };
 
@@ -66,10 +92,30 @@ export default function Quiz() {
         <h3 style={{ fontSize: '48px', color: '#6c63ff' }}>{result.percentage}%</h3>
         <p style={{ color: '#8888aa' }}>{result.score}/{result.total_marks} marks</p>
         <button className="btn btn-primary" style={{ marginTop: '16px' }}
-          onClick={() => { setResult(null); setActiveQuiz(null); }}>
+          onClick={() => { setResult(null); setActiveQuiz(null); fetchData(); }}>
           Back to Quizzes
         </button>
       </div>
+      {result.analysis && (
+        <div className="card" style={{ marginBottom: '24px' }}>
+          <h3 style={{ marginBottom: '12px', color: '#6c63ff' }}>📈 Performance Analysis</h3>
+          <p style={{ color: '#d5d5ff', marginBottom: '8px' }}>{result.analysis.summary}</p>
+          <p style={{ color: '#8888aa', fontSize: '13px', marginBottom: '6px' }}>
+            Accuracy: <strong style={{ color: '#6c63ff' }}>{result.analysis.accuracy}%</strong>
+          </p>
+          <p style={{ color: '#8888aa', fontSize: '13px', marginBottom: '6px' }}>
+            Correct: {result.analysis.correct_count} • Incorrect: {result.analysis.incorrect_count} • Unanswered: {result.analysis.unanswered_count}
+          </p>
+          {Array.isArray(result.analysis.focus_topics) && result.analysis.focus_topics.length > 0 && (
+            <p style={{ color: '#ffb3c3', fontSize: '13px', marginBottom: '6px' }}>
+              Focus on: {result.analysis.focus_topics.join(' | ')}
+            </p>
+          )}
+          <p style={{ color: '#43e97b', fontSize: '13px' }}>
+            Next step: {result.analysis.recommendation}
+          </p>
+        </div>
+      )}
       {result.results.map((r, i) => (
         <div key={i} className="card" style={{
           borderColor: r.is_correct ? '#43e97b' : '#ff6584'
@@ -161,9 +207,24 @@ export default function Quiz() {
             <p style={{ fontWeight: '600' }}>{quiz.title}</p>
             <p style={{ color: '#8888aa', fontSize: '13px' }}>
               {quiz.question_count} questions • <span className={`badge badge-${quiz.difficulty}`}>{quiz.difficulty}</span>
+              {quiz.completed ? ' • ✅ Completed' : ' • ⏳ Pending'}
             </p>
           </div>
-          <button className="btn btn-primary" onClick={() => handleStartQuiz(quiz.id)}>Start Quiz</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-primary" onClick={() => handleStartQuiz(quiz.id)}>Start Quiz</button>
+            <button
+              className="btn"
+              style={{
+                background: '#2a1a25',
+                color: '#ff6584',
+                border: '1px solid #ff6584',
+                padding: '8px 12px',
+              }}
+              onClick={() => handleDeleteQuiz(quiz.id)}
+            >
+              Delete
+            </button>
+          </div>
         </div>
       ))}
     </div>

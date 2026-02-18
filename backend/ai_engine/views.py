@@ -1,20 +1,29 @@
 import time
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from documents.models import Document
 from flashcards.models import Flashcard
 from quizzes.models import Quiz, Question
+from django.db.models.functions import Lower
 from .models import AIRequest, ExamPrepSlide, ConceptFact
 from .utils import (
     generate_flashcards,
     generate_quiz,
     generate_summary,
     extract_facts,
-    query_ollama,
     answer_question_rag,
 )
+
+
+def get_university_id(user):
+    profile = getattr(user, "profile", None)
+    if profile and profile.university:
+        return profile.university.id
+    return None
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def generate_flashcards_view(request):
@@ -41,13 +50,27 @@ def generate_flashcards_view(request):
     )
 
     start_time = time.time()
-    cards_data = generate_flashcards(doc.extracted_text, num_cards, difficulty)
+    university_id = get_university_id(request.user)
+    course_id = request.data.get("course_id") or doc.course_id
+    cards_data = generate_flashcards(
+        doc.extracted_text,
+        university_id=university_id,
+        course_id=course_id,
+        document_id=doc.id,
+        num_cards=num_cards,
+        difficulty=difficulty,
+    )
     processing_time = time.time() - start_time
 
     if not cards_data:
         ai_request.status = "failed"
         ai_request.save()
-        return Response({"error": "Failed to generate flashcards"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({
+            "error": (
+                "Failed to generate flashcards. Ollama may be busy on CPU-only mode. "
+                "Try fewer cards (2-3) or wait 1-3 minutes and retry."
+            )
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     created_cards = []
     for card in cards_data:
@@ -104,13 +127,84 @@ def generate_quiz_view(request):
     )
 
     start_time = time.time()
-    questions_data = generate_quiz(doc.extracted_text, num_questions, difficulty)
+    university_id = get_university_id(request.user)
+    course_id = request.data.get("course_id") or doc.course_id
+    questions_data = generate_quiz(
+        doc.extracted_text,
+        university_id=university_id,
+        course_id=course_id,
+        document_id=doc.id,
+        num_questions=num_questions,
+        difficulty=difficulty,
+    )
     processing_time = time.time() - start_time
 
     if not questions_data:
         ai_request.status = "failed"
         ai_request.save()
-        return Response({"error": "Failed to generate quiz"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({
+            "error": (
+                "Failed to generate quiz. Ollama may be busy on CPU-only mode. "
+                "Try fewer questions (2-3) or wait 1-3 minutes and retry."
+            )
+        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    existing_question_keys = set(
+        Question.objects.filter(
+            quiz__document=doc,
+            quiz__created_by=request.user,
+        ).annotate(
+            q_norm=Lower("question_text")
+        ).values_list("q_norm", flat=True)
+    )
+
+    filtered_questions = []
+    for q in questions_data:
+        q_text = (q.get("question") or "").strip()
+        if not q_text:
+            continue
+        q_key = " ".join(q_text.lower().split())
+        if q_key in existing_question_keys:
+            continue
+        existing_question_keys.add(q_key)
+        filtered_questions.append(q)
+
+    if not filtered_questions:
+        used_questions = list(
+            Question.objects.filter(
+                quiz__document=doc,
+                quiz__created_by=request.user,
+            ).values_list("question_text", flat=True)
+        )
+        retry_questions = generate_quiz(
+            doc.extracted_text,
+            university_id=university_id,
+            course_id=course_id,
+            document_id=doc.id,
+            num_questions=num_questions,
+            difficulty=difficulty,
+            excluded_questions=used_questions,
+        )
+
+        for q in retry_questions:
+            q_text = (q.get("question") or "").strip()
+            if not q_text:
+                continue
+            q_key = " ".join(q_text.lower().split())
+            if q_key in existing_question_keys:
+                continue
+            existing_question_keys.add(q_key)
+            filtered_questions.append(q)
+
+    if not filtered_questions:
+        ai_request.status = "failed"
+        ai_request.save()
+        return Response({
+            "error": (
+                "Generated questions were duplicates of existing quizzes for this document. "
+                "Try a different difficulty or regenerate."
+            )
+        }, status=status.HTTP_409_CONFLICT)
 
     quiz = Quiz.objects.create(
         created_by=request.user,
@@ -121,7 +215,7 @@ def generate_quiz_view(request):
     )
 
     created_questions = []
-    for i, q in enumerate(questions_data):
+    for i, q in enumerate(filtered_questions):
         question = Question.objects.create(
             quiz=quiz,
             question_text=q.get("question", ""),
@@ -172,7 +266,14 @@ def generate_exam_prep_view(request):
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
 
     start_time = time.time()
-    summary = generate_summary(doc.extracted_text)
+    university_id = get_university_id(request.user)
+    course_id = request.data.get("course_id") or doc.course_id
+    summary = generate_summary(
+        doc.extracted_text,
+        university_id=university_id,
+        course_id=course_id,
+        document_id=doc.id,
+    )
     processing_time = time.time() - start_time
 
     if not summary:
@@ -210,7 +311,15 @@ def extract_facts_view(request):
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
 
     start_time = time.time()
-    facts_data = extract_facts(doc.extracted_text, num_facts)
+    university_id = get_university_id(request.user)
+    course_id = request.data.get("course_id") or doc.course_id
+    facts_data = extract_facts(
+        doc.extracted_text,
+        university_id=university_id,
+        course_id=course_id,
+        document_id=doc.id,
+        num_facts=num_facts,
+    )
     processing_time = time.time() - start_time
 
     created_facts = []
@@ -235,15 +344,49 @@ def extract_facts_view(request):
         "facts": created_facts,
     }, status=status.HTTP_201_CREATED)
 
-
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def ollama_status(request):
-    """Check if Ollama is running"""
-    response = query_ollama("Say 'OK' and nothing else.")
-    if "Error" in response:
-        return Response({"status": "offline", "message": response})
-    return Response({"status": "online", "model": "llama3.2:3b", "response": response})
+    """Check Ollama server health and configured model availability."""
+    try:
+        import requests as req
+        from django.conf import settings
+
+        tags_response = req.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=10)
+        if tags_response.status_code != 200:
+            return Response({
+                "status": "offline",
+                "model": settings.OLLAMA_MODEL,
+                "message": f"Ollama health check failed with status code: {tags_response.status_code}",
+            })
+
+        payload = tags_response.json() or {}
+        models = payload.get("models", [])
+        installed_model_names = [model.get("name", "") for model in models if model.get("name")]
+        model_available = settings.OLLAMA_MODEL in installed_model_names
+
+        response_data = {
+            "status": "online",
+            "model": settings.OLLAMA_MODEL,
+            "model_available": model_available,
+        }
+        if not model_available:
+            response_data["message"] = (
+                f"Configured model '{settings.OLLAMA_MODEL}' is not installed in Ollama."
+            )
+            response_data["installed_models"] = installed_model_names[:10]
+
+        return Response(response_data)
+    except Exception as e:
+        fallback_model = "llama3.2:3b"
+        configured_model = fallback_model
+        if "settings" in locals():
+            configured_model = getattr(settings, "OLLAMA_MODEL", fallback_model)
+        return Response({
+            "status": "offline",
+            "model": configured_model,
+            "message": str(e),
+        })
 # Create your views here.
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
