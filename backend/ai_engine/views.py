@@ -396,6 +396,7 @@ def ask_question(request):
     """
     question = request.data.get("question")
     course_id = request.data.get("course_id")
+    document_id = request.data.get("document_id")
 
     if not question:
         return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -408,7 +409,7 @@ def ask_question(request):
             "error": "You must be affiliated with a university to use this feature"
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    result = answer_question_rag(question, university_id, course_id)
+    result = answer_question_rag(question, university_id, course_id, document_id=document_id)
 
     return Response({
         "question": question,

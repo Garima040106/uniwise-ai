@@ -1,4 +1,5 @@
 import os
+import re
 import PyPDF2
 from docx import Document as DocxDocument
 
@@ -43,18 +44,108 @@ def extract_from_txt(file_path):
         return f.read().strip()
 
 
+def _split_long_text(segment, max_size):
+    """
+    Split oversized paragraph-like segments into sentence-aware pieces.
+    Falls back to whitespace-aware hard splits for very long lines.
+    """
+    segment = (segment or "").strip()
+    if not segment:
+        return []
+    if len(segment) <= max_size:
+        return [segment]
+
+    sentences = re.split(r"(?<=[.!?])\s+", segment)
+    pieces = []
+    current = ""
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        tentative = f"{current} {sentence}".strip() if current else sentence
+        if len(tentative) <= max_size:
+            current = tentative
+            continue
+
+        if current:
+            pieces.append(current)
+            current = ""
+
+        if len(sentence) <= max_size:
+            current = sentence
+            continue
+
+        start = 0
+        while start < len(sentence):
+            end = min(len(sentence), start + max_size)
+            if end < len(sentence):
+                split_at = sentence.rfind(" ", start, end)
+                if split_at > start + 60:
+                    end = split_at
+            chunk = sentence[start:end].strip()
+            if chunk:
+                pieces.append(chunk)
+            if end <= start:
+                end = start + max_size
+            start = end
+
+    if current:
+        pieces.append(current)
+
+    return pieces
+
+
 def chunk_text(text, chunk_size=1000, overlap=100):
     """
-    Split text into overlapping chunks for processing
+    Split text into overlapping, sentence-aware chunks for retrieval.
     """
-    chunks = []
-    start = 0
-    text_length = len(text)
+    clean_text = (text or "").replace("\x00", "").strip()
+    if not clean_text:
+        return []
 
-    while start < text_length:
-        end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
-        start = end - overlap
+    paragraphs = [p.strip() for p in re.split(r"\n{2,}", clean_text) if p.strip()]
+    if not paragraphs:
+        paragraphs = [clean_text]
 
-    return chunks
+    segments = []
+    for paragraph in paragraphs:
+        segments.extend(_split_long_text(paragraph, chunk_size))
+
+    raw_chunks = []
+    current = ""
+    for segment in segments:
+        tentative = f"{current}\n{segment}".strip() if current else segment
+        if len(tentative) <= chunk_size:
+            current = tentative
+            continue
+
+        if current:
+            raw_chunks.append(current.strip())
+        current = segment
+
+    if current:
+        raw_chunks.append(current.strip())
+
+    if not raw_chunks:
+        return []
+
+    overlap = max(0, min(overlap, chunk_size // 2))
+    if overlap == 0:
+        return raw_chunks
+
+    final_chunks = []
+    for index, chunk in enumerate(raw_chunks):
+        if index == 0:
+            final_chunks.append(chunk)
+            continue
+
+        previous_tail = raw_chunks[index - 1][-overlap:].strip()
+        if previous_tail and not chunk.startswith(previous_tail):
+            merged = f"{previous_tail}\n{chunk}".strip()
+        else:
+            merged = chunk
+        final_chunks.append(merged)
+
+    return final_chunks

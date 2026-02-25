@@ -1,0 +1,94 @@
+name: uniwise-prod
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: uniwise_db_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-uniwise_db}
+      POSTGRES_USER: ${POSTGRES_USER:-uniwise_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-uniwise_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uniwise_user} -d ${POSTGRES_DB:-uniwise_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PIP_REQUIREMENTS: requirements.prod.txt
+    container_name: uniwise_backend_prod
+    restart: unless-stopped
+    command: /app/entrypoint.prod.sh
+    environment:
+      DJANGO_SETTINGS_MODULE: uniwise.settings
+      DEBUG: ${DEBUG:-False}
+      SECRET_KEY: ${SECRET_KEY}
+      USE_POSTGRES: "True"
+      DB_NAME: ${POSTGRES_DB:-uniwise_db}
+      DB_USER: ${POSTGRES_USER:-uniwise_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-uniwise_pass}
+      DB_HOST: db
+      DB_PORT: ${DB_PORT:-5432}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      CORS_ALLOW_ALL_ORIGINS: ${CORS_ALLOW_ALL_ORIGINS:-False}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-False}
+      CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-False}
+      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-False}
+      SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OLLAMA_REQUEST_TIMEOUT: ${OLLAMA_REQUEST_TIMEOUT:-180}
+      OLLAMA_MAX_RETRIES: ${OLLAMA_MAX_RETRIES:-1}
+      AI_CONTEXT_CHAR_LIMIT: ${AI_CONTEXT_CHAR_LIMIT:-2200}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-700}
+      MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-10485760}
+      RAG_MAX_DISTANCE: ${RAG_MAX_DISTANCE:-1.2}
+      CHROMA_PERSIST_DIRECTORY: /app/chroma_db
+    volumes:
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+      - chroma_volume:/app/chroma_db
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/ai/status/ >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        REACT_APP_API_BASE_URL: ${REACT_APP_API_BASE_URL:-/api}
+    container_name: uniwise_web_prod
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-80}:80"
+    volumes:
+      - media_volume:/srv/media:ro
+      - static_volume:/srv/static:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  media_volume:
+  static_volume:
+  chroma_volume:

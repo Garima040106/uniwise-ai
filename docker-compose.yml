@@ -1,41 +1,55 @@
-
-
 services:
   web:
     build: .
     container_name: uniwise_backend
-    command: python manage.py runserver 0.0.0.0:8000
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     volumes:
       - ./backend:/app
       - media_volume:/app/media
       - static_volume:/app/staticfiles
+      - chroma_volume:/app/chroma_db
     ports:
       - "8000:8000"
     environment:
-      - DEBUG=True
-      - SECRET_KEY=uniwise-docker-secret-key
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-      - OLLAMA_BASE_URL=http://172.17.0.1:11434
-      - OLLAMA_MODEL=llama3.2:3b
       - DJANGO_SETTINGS_MODULE=uniwise.settings
+      - DEBUG=${DEBUG:-True}
+      - SECRET_KEY=${SECRET_KEY:-uniwise-docker-secret-key}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      - USE_POSTGRES=True
+      - DB_NAME=${POSTGRES_DB:-uniwise_db}
+      - DB_USER=${POSTGRES_USER:-uniwise_user}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-uniwise_pass}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT:-5432}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://172.17.0.1:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:15-alpine
     container_name: uniwise_db
     environment:
-      - POSTGRES_DB=uniwise_db
-      - POSTGRES_USER=uniwise_user
-      - POSTGRES_PASSWORD=uniwise_pass
+      - POSTGRES_DB=${POSTGRES_DB:-uniwise_db}
+      - POSTGRES_USER=${POSTGRES_USER:-uniwise_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-uniwise_pass}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uniwise_user} -d ${POSTGRES_DB:-uniwise_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   postgres_data:
   media_volume:
   static_volume:
+  chroma_volume:

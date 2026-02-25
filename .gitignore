@@ -20,6 +20,7 @@ chroma_db/
 
 # Environment
 .env
+.env.prod
 
 # IDE
 .vscode/

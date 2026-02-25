@@ -15,16 +15,20 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+ARG PIP_REQUIREMENTS=requirements.txt
+
 # Install Python dependencies
 COPY requirements.txt /app/
+COPY requirements.prod.txt /app/
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install -r "/app/${PIP_REQUIREMENTS}"
 
 # Copy project
 COPY backend/ /app/
 
 # Create media and static directories
 RUN mkdir -p /app/media/uploads /app/staticfiles
+RUN chmod +x /app/entrypoint.prod.sh
 
 # Expose port
 EXPOSE 8000

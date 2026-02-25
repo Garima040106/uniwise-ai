@@ -65,6 +65,37 @@ npm start
 
 Frontend will run at: `http://localhost:3000`
 
+## Production Deploy (One Command)
+
+This repo now includes a production Docker stack with:
+- Django ASGI server (`uvicorn`) + automatic `migrate` + `collectstatic`
+- PostgreSQL wired as the Django database
+- React production build served by Nginx
+- Nginx reverse proxy for `/api` and `/admin`
+- Persistent volumes for Postgres, media, staticfiles, and ChromaDB
+- Lean backend install via `requirements.prod.txt` for faster builds
+
+### 1) Run deploy script
+
+```bash
+./deploy_prod.sh
+```
+
+If `.env.prod` does not exist, it is auto-created from `.env.prod.example` with a generated `SECRET_KEY`.
+
+### 2) Open app
+
+- App URL: `http://localhost` (or `http://localhost:<WEB_PORT>`)
+
+### 3) Optional: customize production env
+
+Edit `.env.prod` to set:
+- `ALLOWED_HOSTS`
+- `CORS_ALLOWED_ORIGINS`
+- `CSRF_TRUSTED_ORIGINS`
+- `OLLAMA_BASE_URL`
+- TLS-related flags (`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT`)
+
 ## Typical Testing Flow
 
 1. Login (student/admin)
