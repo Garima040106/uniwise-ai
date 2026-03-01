@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -42,6 +43,7 @@ def env_list(name, default=""):
 
 SECRET_KEY = os.getenv("SECRET_KEY", "uniwise-dev-secret-key-change-in-production")
 DEBUG = env_bool("DEBUG", True)
+TESTING = "test" in sys.argv
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,0.0.0.0")
 
 INSTALLED_APPS = [
@@ -69,6 +71,8 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "accounts.middleware.UniversityTenantMiddleware",
+    "accounts.middleware.AuditLogMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -143,9 +147,38 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticatedOrReadOnly",
     ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": os.getenv("API_THROTTLE_ANON", "60/min"),
+        "user": os.getenv("API_THROTTLE_USER", "300/min"),
+    },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
 }
+
+CACHE_BACKEND = os.getenv("CACHE_BACKEND", "locmem").strip().lower()
+REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", "redis://127.0.0.1:6379/1")
+if CACHE_BACKEND == "redis":
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_CACHE_URL,
+            "TIMEOUT": env_int("CACHE_TIMEOUT", 300),
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "uniwise-default-cache",
+            "TIMEOUT": env_int("CACHE_TIMEOUT", 300),
+        }
+    }
+
+RAG_ANSWER_CACHE_TIMEOUT = env_int("RAG_ANSWER_CACHE_TIMEOUT", 300)
 
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", DEBUG)
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", True)
@@ -170,11 +203,11 @@ CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", "Lax")
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
 
-SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", False)
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", (not DEBUG) and (not TESTING))
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 0)
-SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", False)
-SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+SECURE_HSTS_SECONDS = env_int("SECURE_HSTS_SECONDS", 31536000 if not DEBUG else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", not DEBUG)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", not DEBUG)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
@@ -192,5 +225,7 @@ CHROMA_PERSIST_DIRECTORY = Path(
     os.getenv("CHROMA_PERSIST_DIRECTORY", str(BASE_DIR / "chroma_db"))
 )
 RAG_MAX_DISTANCE = env_float("RAG_MAX_DISTANCE", 1.2)
+UNIVERSITY_DB_ALIAS_MAP = os.getenv("UNIVERSITY_DB_ALIAS_MAP", "")
+DATABASE_ROUTERS = ["uniwise.db_router.UniversityDatabaseRouter"]
 
 SPACED_REPETITION_INTERVALS = [1, 3, 7, 14, 30, 60]

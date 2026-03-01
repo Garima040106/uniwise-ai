@@ -8,7 +8,7 @@ from pptx import Presentation
 def extract_text_from_file(file_path):
     """
     Extract text from uploaded documents
-    Supports: PDF, DOCX, TXT
+    Supports: PDF, DOCX, TXT, PPTX
     """
     ext = os.path.splitext(file_path)[1].lower()
     

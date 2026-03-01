@@ -15,4 +15,8 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("profile/", views.profile, name="profile"),
     path("universities/", views.list_universities, name="universities"),
+    path("widget/embed/", views.widget_embed_code, name="widget_embed_code"),
+    path("integrations/", views.list_integrations, name="list_integrations"),
+    path("integrations/upsert/", views.upsert_integration, name="upsert_integration"),
+    path("audit-logs/", views.audit_logs, name="audit_logs"),
 ]

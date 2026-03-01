@@ -1,5 +1,6 @@
 import os
 import secrets
+import hashlib
 from datetime import timedelta
 from urllib.parse import urlencode
 
@@ -19,7 +20,8 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import LoginTwoFactorChallenge, University, UserProfile
+from .models import AuditLog, LoginTwoFactorChallenge, University, UniversityIntegration, UserProfile
+from .permissions import IsProfessorOrAdmin, IsUniversityScopedAccess
 
 PASSWORD_RESET_TOKEN_GENERATOR = PasswordResetTokenGenerator()
 
@@ -92,8 +94,14 @@ def _auth_payload(user, profile, request):
 
 def _is_role_allowed(user, profile, required_role):
     if required_role == "admin":
-        return profile.role == "admin" or user.is_staff or user.is_superuser
+        return profile.role in {"admin", "professor"} or user.is_staff or user.is_superuser
     return profile.role == required_role
+
+
+def _is_professor_or_admin(user):
+    profile = getattr(user, "profile", None)
+    role = getattr(profile, "role", "")
+    return role in {"professor", "admin"} or user.is_staff or user.is_superuser
 
 
 def _find_user(identifier, required_role=None):
@@ -524,6 +532,9 @@ def profile(request):
             "learning_pace": profile_obj.learning_pace,
             "two_factor_enabled": profile_obj.two_factor_enabled,
             "sso_provider": profile_obj.sso_provider,
+            "university_id": profile_obj.university_id,
+            "university_subdomain": profile_obj.university.subdomain if profile_obj.university else "",
+            "university_custom_domain": profile_obj.university.custom_domain if profile_obj.university else "",
         }
     )
 
@@ -532,6 +543,211 @@ def profile(request):
 @permission_classes([AllowAny])
 def list_universities(request):
     """List all universities."""
-    universities = University.objects.all()
-    data = [{"id": u.id, "name": u.name, "country": u.country} for u in universities]
+    universities = University.objects.filter(is_active=True).order_by("name")
+    data = [
+        {
+            "id": u.id,
+            "name": u.name,
+            "slug": u.slug,
+            "country": u.country,
+            "subdomain": u.subdomain,
+            "custom_domain": u.custom_domain,
+            "branding": {
+                "primary_color": u.branding_primary_color,
+                "secondary_color": u.branding_secondary_color,
+                "logo_url": u.logo_url,
+            },
+            "allow_public_university_info": u.allow_public_university_info,
+        }
+        for u in universities
+    ]
     return Response(data)
+
+
+def _require_professor_or_admin(request):
+    if _is_professor_or_admin(request.user):
+        return None
+    return Response({"error": "Professor/Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+
+def _api_key_hash(raw_key):
+    normalized = (raw_key or "").strip()
+    if not normalized:
+        return "", ""
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return digest, normalized[-4:]
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsProfessorOrAdmin, IsUniversityScopedAccess])
+def widget_embed_code(request):
+    """Generate embeddable widget snippet for university websites."""
+    access_error = _require_professor_or_admin(request)
+    if access_error:
+        return access_error
+
+    profile = _ensure_profile(request.user)
+    if not profile.university:
+        return Response({"error": "University affiliation required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    university = profile.university
+    base_widget_url = os.getenv(
+        "WIDGET_BASE_URL",
+        request.build_absolute_uri("/").rstrip("/"),
+    )
+    public_api_url = request.build_absolute_uri("/api/ai/ask/university-info/public/")
+
+    snippet = (
+        "<script>\n"
+        "  window.UniwiseWidgetConfig = {\n"
+        f"    universityId: {university.id},\n"
+        f"    apiUrl: '{public_api_url}',\n"
+        f"    primaryColor: '{university.branding_primary_color}',\n"
+        f"    secondaryColor: '{university.branding_secondary_color}',\n"
+        "  };\n"
+        "</script>\n"
+        f"<script async src=\"{base_widget_url}/static/uniwise-widget.js\"></script>"
+    )
+
+    return Response(
+        {
+            "university_id": university.id,
+            "snippet": snippet,
+            "widget_script_url": f"{base_widget_url}/static/uniwise-widget.js",
+            "public_api_url": public_api_url,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsProfessorOrAdmin, IsUniversityScopedAccess])
+def list_integrations(request):
+    """List LMS/ERP/Calendar/SSO/Widget integrations for the user's university."""
+    access_error = _require_professor_or_admin(request)
+    if access_error:
+        return access_error
+
+    profile = _ensure_profile(request.user)
+    if not profile.university:
+        return Response({"error": "University affiliation required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    integrations = UniversityIntegration.objects.filter(university=profile.university).order_by("category", "provider_name")
+    data = []
+    for item in integrations:
+        data.append(
+            {
+                "id": item.id,
+                "category": item.category,
+                "provider_name": item.provider_name,
+                "status": item.status,
+                "base_url": item.base_url,
+                "config": item.config,
+                "api_key_last4": item.api_key_last4,
+                "updated_at": item.updated_at,
+            }
+        )
+
+    return Response({"integrations": data})
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsProfessorOrAdmin, IsUniversityScopedAccess])
+def upsert_integration(request):
+    """Create or update integration config for LMS/ERP/Calendar/SSO/widget."""
+    access_error = _require_professor_or_admin(request)
+    if access_error:
+        return access_error
+
+    profile = _ensure_profile(request.user)
+    if not profile.university:
+        return Response({"error": "University affiliation required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    category = request.data.get("category", "").strip()
+    provider_name = request.data.get("provider_name", "").strip()
+    status_value = request.data.get("status", "scaffold").strip()
+    base_url = request.data.get("base_url", "").strip()
+    config = request.data.get("config", {})
+    api_key = request.data.get("api_key", "")
+
+    valid_categories = {choice[0] for choice in UniversityIntegration.CATEGORY_CHOICES}
+    valid_statuses = {choice[0] for choice in UniversityIntegration.STATUS_CHOICES}
+    if category not in valid_categories:
+        return Response({"error": f"category must be one of: {', '.join(sorted(valid_categories))}"}, status=400)
+    if not provider_name:
+        return Response({"error": "provider_name is required"}, status=400)
+    if status_value not in valid_statuses:
+        return Response({"error": f"status must be one of: {', '.join(sorted(valid_statuses))}"}, status=400)
+    if config is None:
+        config = {}
+    if not isinstance(config, dict):
+        return Response({"error": "config must be a JSON object"}, status=400)
+
+    integration, created = UniversityIntegration.objects.get_or_create(
+        university=profile.university,
+        category=category,
+        provider_name=provider_name,
+        defaults={
+            "created_by": request.user,
+        },
+    )
+    integration.status = status_value
+    integration.base_url = base_url
+    integration.config = config
+    if api_key:
+        digest, last4 = _api_key_hash(api_key)
+        integration.api_key_hash = digest
+        integration.api_key_last4 = last4
+    integration.save()
+
+    return Response(
+        {
+            "message": "Integration saved",
+            "created": created,
+            "integration": {
+                "id": integration.id,
+                "category": integration.category,
+                "provider_name": integration.provider_name,
+                "status": integration.status,
+                "base_url": integration.base_url,
+                "config": integration.config,
+                "api_key_last4": integration.api_key_last4,
+                "updated_at": integration.updated_at,
+            },
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsProfessorOrAdmin, IsUniversityScopedAccess])
+def audit_logs(request):
+    """Fetch latest audit logs for security/compliance review."""
+    access_error = _require_professor_or_admin(request)
+    if access_error:
+        return access_error
+
+    profile = _ensure_profile(request.user)
+    queryset = AuditLog.objects.all()
+    if profile.university:
+        queryset = queryset.filter(university=profile.university)
+
+    logs = queryset.order_by("-created_at")[:200]
+    data = [
+        {
+            "id": log.id,
+            "request_id": str(log.request_id),
+            "event_type": log.event_type,
+            "action": log.action,
+            "method": log.method,
+            "path": log.path,
+            "status_code": log.status_code,
+            "duration_ms": log.duration_ms,
+            "ip_address": log.ip_address,
+            "user": log.user.username if log.user else None,
+            "university_id": log.university_id,
+            "metadata": log.metadata,
+            "created_at": log.created_at,
+        }
+        for log in logs
+    ]
+
+    return Response({"logs": data})

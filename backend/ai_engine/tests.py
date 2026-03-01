@@ -1,6 +1,10 @@
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.contrib.auth.models import User
+from django.test import SimpleTestCase, TestCase
+from rest_framework.test import APIClient
+
+from accounts.models import University, UserProfile
 
 from .utils import (
     _parse_json_array,
@@ -74,3 +78,68 @@ class AIUtilsTests(SimpleTestCase):
         self.assertIn("could not generate an answer", result["answer"].lower())
         self.assertEqual(result["sources"], ["Doc 1"])
         self.assertTrue(result["found_in_docs"])
+
+
+class UniversityInfoQueryTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.university = University.objects.create(
+            name="BMSCE",
+            country="India",
+            allow_public_university_info=True,
+            is_active=True,
+        )
+
+    @patch("ai_engine.views.answer_question_rag")
+    def test_public_university_info_endpoint_returns_answer(self, mock_answer):
+        mock_answer.return_value = {
+            "answer": "Admissions are open till September.",
+            "sources": ["Admissions Policy"],
+            "found_in_docs": True,
+        }
+
+        res = self.client.post(
+            "/api/ai/ask/university-info/public/",
+            {
+                "university_id": self.university.id,
+                "question": "What is the admission deadline?",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data.get("knowledge_base"), "university_info")
+        self.assertEqual(res.data.get("visibility_scope"), "public")
+
+    @patch("ai_engine.views.answer_question_rag")
+    def test_private_university_info_requires_auth(self, _mock_answer):
+        res = self.client.post(
+            "/api/ai/ask/university-info/private/",
+            {"question": "What are hostel policies?"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    @patch("ai_engine.views.answer_question_rag")
+    def test_private_university_info_for_authenticated_user(self, mock_answer):
+        user = User.objects.create_user(username="student_ai", password="TempPass123!")
+        UserProfile.objects.create(
+            user=user,
+            role="student",
+            student_id="AI9001",
+            university=self.university,
+        )
+        self.client.force_authenticate(user=user)
+
+        mock_answer.return_value = {
+            "answer": "Hostel guidelines are available in policy docs.",
+            "sources": ["Hostel Handbook"],
+            "found_in_docs": True,
+        }
+
+        res = self.client.post(
+            "/api/ai/ask/university-info/private/",
+            {"question": "What are hostel policies?"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data.get("knowledge_base"), "university_info")

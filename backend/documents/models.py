@@ -4,6 +4,15 @@ from courses.models import Course, Subject
 
 
 class Document(models.Model):
+    KNOWLEDGE_BASE_CHOICES = [
+        ("academic", "Academic RAG"),
+        ("university_info", "University Info RAG"),
+    ]
+    VISIBILITY_CHOICES = [
+        ("private", "Private"),
+        ("public", "Public"),
+    ]
+
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("processing", "Processing"),
@@ -21,6 +30,10 @@ class Document(models.Model):
     course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True, blank=True)
     subject = models.ForeignKey(Subject, on_delete=models.SET_NULL, null=True, blank=True)
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    tags = models.CharField(max_length=512, blank=True)
+    knowledge_base = models.CharField(max_length=30, choices=KNOWLEDGE_BASE_CHOICES, default="academic")
+    visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default="private")
     file = models.FileField(upload_to="uploads/")
     file_type = models.CharField(max_length=10, choices=TYPE_CHOICES, blank=True)
     file_size = models.IntegerField(default=0)

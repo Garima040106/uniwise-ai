@@ -83,5 +83,9 @@ export const getDocumentProgress = (documentId) =>
   API.get('/analytics/document-progress/', { params: documentId ? { document_id: documentId } : {} });
 export const getLearningCurve = () => API.get('/analytics/learning-curve/');
 export const getSkillBreakdown = () => API.get('/analytics/skill-breakdown/');
+export const getAdminOverview = () => API.get('/analytics/admin/overview/');
+export const getAdminStudentInsights = () => API.get('/analytics/admin/student-insights/');
+export const getAdminReports = () => API.get('/analytics/admin/reports/');
+export const getAdminActivityLog = () => API.get('/analytics/admin/activity-log/');
 
 export default API;

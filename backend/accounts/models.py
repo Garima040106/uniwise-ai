@@ -7,9 +7,18 @@ import uuid
 
 class University(models.Model):
     name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=255, unique=True, blank=True, null=True)
     country = models.CharField(max_length=100)
+    subdomain = models.CharField(max_length=100, unique=True, blank=True, null=True)
+    custom_domain = models.CharField(max_length=255, unique=True, blank=True, null=True)
+    branding_primary_color = models.CharField(max_length=20, default="#2563eb")
+    branding_secondary_color = models.CharField(max_length=20, default="#14b8a6")
+    logo_url = models.URLField(blank=True)
+    db_alias = models.CharField(max_length=64, blank=True)
     erp_system = models.CharField(max_length=100, blank=True)
     erp_integration_url = models.URLField(blank=True)
+    allow_public_university_info = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -88,3 +97,70 @@ class LoginTwoFactorChallenge(models.Model):
 
     def is_active(self) -> bool:
         return self.consumed_at is None and timezone.now() < self.expires_at
+
+
+class UniversityIntegration(models.Model):
+    CATEGORY_CHOICES = [
+        ("widget", "Website Widget"),
+        ("lms", "LMS"),
+        ("erp", "ERP"),
+        ("calendar", "Calendar"),
+        ("sso", "SSO"),
+        ("api", "API Integration"),
+    ]
+    STATUS_CHOICES = [
+        ("scaffold", "Scaffold"),
+        ("active", "Active"),
+        ("disabled", "Disabled"),
+    ]
+
+    university = models.ForeignKey(University, on_delete=models.CASCADE, related_name="integrations")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    provider_name = models.CharField(max_length=120)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="scaffold")
+    base_url = models.URLField(blank=True)
+    config = models.JSONField(default=dict, blank=True)
+    api_key_hash = models.CharField(max_length=128, blank=True)
+    api_key_last4 = models.CharField(max_length=4, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("university", "category", "provider_name")
+        ordering = ("category", "provider_name")
+
+    def __str__(self):
+        return f"{self.university.name} - {self.category} - {self.provider_name}"
+
+
+class AuditLog(models.Model):
+    EVENT_CHOICES = [
+        ("auth", "Auth"),
+        ("data_access", "Data Access"),
+        ("data_change", "Data Change"),
+        ("integration", "Integration"),
+        ("security", "Security"),
+        ("system", "System"),
+    ]
+
+    request_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    event_type = models.CharField(max_length=30, choices=EVENT_CHOICES, default="system")
+    action = models.CharField(max_length=120)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    university = models.ForeignKey(University, on_delete=models.SET_NULL, null=True, blank=True)
+    method = models.CharField(max_length=10)
+    path = models.CharField(max_length=255)
+    status_code = models.IntegerField(default=0)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    duration_ms = models.IntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        username = self.user.username if self.user else "anonymous"
+        return f"{self.action} ({self.method} {self.path}) by {username}"

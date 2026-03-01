@@ -8,6 +8,15 @@ Uniwise AI is a university-focused custom LLM platform with:
 
 The stack uses Django + DRF, React, PostgreSQL, ChromaDB, and Ollama (`llama3.2:3b` by default).
 
+## Latest Update (March 1, 2026)
+
+- Added a dedicated Administration Portal workflow in frontend + backend with role-gated APIs.
+- Expanded backend architecture with dual RAG (`academic` + `university_info`) and public/private university-info querying.
+- Added multi-tenant foundations (tenant middleware, university branding/domain metadata, DB router scaffold).
+- Added integration scaffolding APIs (widget embed, LMS/ERP/Calendar/SSO integration registry).
+- Added API audit logging, tenant-aware RBAC permission classes, and stronger production security defaults.
+- Added response caching + API throttling controls for better reliability under higher traffic.
+
 ## Product Overview
 
 ### 1) Pre-auth experience
@@ -36,8 +45,16 @@ The stack uses Django + DRF, React, PostgreSQL, ChromaDB, and Ollama (`llama3.2:
 - Additional placeholders: calendar, notifications, profile settings, help
 
 ### 4) Admin workspace
-- Admin login route and role-gated backend check
-- Existing app workspace for dashboard, AI, flashcards, quizzes, documents
+- Faculty/Admin login route with stricter role-gated backend checks
+- Role-aware access for Professor, IT Admin, and Super Admin contexts
+- Dedicated Admin Portal modules:
+  - University overview dashboard + system health + activity log
+  - Admin AI copilot (faculty/content/technical support prompts)
+  - Content management (documents, AI content generation, course setup)
+  - Student analytics + at-risk alerts + intervention controls
+  - Quiz/assessment management
+  - University information and chatbot training controls
+  - System administration and reporting insights
 
 ### 5) AI + document pipeline
 - Upload/index document types: `.pdf`, `.docx`, `.txt`, `.pptx`
@@ -45,6 +62,31 @@ The stack uses Django + DRF, React, PostgreSQL, ChromaDB, and Ollama (`llama3.2:
 - Flashcard/quiz/exam-prep generation
 - Uploads now fail early if text extraction is empty (clear API error message)
 - `.pptx` text extraction support is implemented
+- Dual RAG:
+  - `academic` knowledge base for course materials
+  - `university_info` knowledge base for admission/policies/services
+  - Public vs private university-info retrieval scopes
+
+### 6) Backend technical features
+- Multi-tenancy foundations:
+  - Tenant university resolution via subdomain/custom domain/header
+  - Optional DB alias routing scaffold via `UNIVERSITY_DB_ALIAS_MAP`
+  - Per-university Chroma collections
+- Security:
+  - Role-aware access controls for student/professor/admin flows
+  - Tenant-aware RBAC guards on protected API routes
+  - University-scoped document visibility checks
+  - API audit logging middleware + queryable audit log endpoint
+  - HTTPS/TLS hardening flags in settings
+- Integrations:
+  - Widget embed snippet API (`/api/accounts/widget/embed/`)
+  - Integration registry APIs for LMS/ERP/Calendar/SSO/widget
+  - SSO provider scaffold and Google OAuth start flow
+- Performance:
+  - Cached answers for repeated Q&A requests
+  - Configurable cache backend (`locmem` or Redis)
+  - Configurable RAG answer cache timeout
+  - API throttling defaults for anonymous and authenticated traffic
 
 ## Tech Stack
 
@@ -129,6 +171,11 @@ Key variables:
 - `GOOGLE_OAUTH_CLIENT_ID` (enables Google OAuth redirect mode)
 - `SSO_PROVIDERS` (defaults to `google,university-sso`)
 - `FRONTEND_RESET_PASSWORD_URL`
+- `CACHE_BACKEND` (`locmem` or `redis`)
+- `REDIS_CACHE_URL`
+- `RAG_ANSWER_CACHE_TIMEOUT`
+- `UNIVERSITY_DB_ALIAS_MAP` (optional, format `1:uni_1,2:uni_2`)
+- `API_THROTTLE_ANON` / `API_THROTTLE_USER`
 
 Start from `.env.prod.example` for production.
 
@@ -149,11 +196,18 @@ Base URL: `/api`
   - `register`, `login/student`, `login/admin`, `two-factor/verify`
   - `password/forgot`, `password/reset`
   - `sso/providers`, `sso/start`, `sso/callback`
+  - `widget/embed`, `integrations`, `integrations/upsert`, `audit-logs`
 - Documents: `/api/documents/*`
 - AI Engine: `/api/ai/*`
+  - `ask/university-info/public`
+  - `ask/university-info/private`
 - Flashcards: `/api/flashcards/*`
 - Quizzes: `/api/quizzes/*`
 - Analytics: `/api/analytics/*`
+  - Admin overview: `/api/analytics/admin/overview/`
+  - Student insights: `/api/analytics/admin/student-insights/`
+  - Reports: `/api/analytics/admin/reports/`
+  - Activity log: `/api/analytics/admin/activity-log/`
 
 ## Troubleshooting
 

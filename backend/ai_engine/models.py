@@ -10,6 +10,7 @@ class AIRequest(models.Model):
         ("summary", "Summary Generation"),
         ("fact", "Fact Extraction"),
         ("exam_prep", "Exam Prep Slides"),
+        ("ask", "RAG Question Answering"),
     ]
     STATUS_CHOICES = [
         ("pending", "Pending"),

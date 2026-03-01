@@ -1,10 +1,20 @@
 from django.contrib import admin
-from .models import LoginTwoFactorChallenge, University, UserProfile
+from .models import AuditLog, LoginTwoFactorChallenge, University, UniversityIntegration, UserProfile
 
 @admin.register(University)
 class UniversityAdmin(admin.ModelAdmin):
-    list_display = ["name", "country", "erp_system", "created_at"]
-    search_fields = ["name", "country"]
+    list_display = [
+        "name",
+        "country",
+        "subdomain",
+        "custom_domain",
+        "erp_system",
+        "allow_public_university_info",
+        "is_active",
+        "created_at",
+    ]
+    search_fields = ["name", "country", "subdomain", "custom_domain", "slug"]
+    list_filter = ["country", "allow_public_university_info", "is_active"]
 
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
@@ -27,3 +37,17 @@ class LoginTwoFactorChallengeAdmin(admin.ModelAdmin):
     list_display = ["challenge_id", "user", "purpose", "attempts", "expires_at", "consumed_at", "created_at"]
     search_fields = ["user__username", "challenge_id"]
     list_filter = ["purpose", "created_at", "expires_at", "consumed_at"]
+
+
+@admin.register(UniversityIntegration)
+class UniversityIntegrationAdmin(admin.ModelAdmin):
+    list_display = ["university", "category", "provider_name", "status", "updated_at"]
+    list_filter = ["category", "status", "university"]
+    search_fields = ["university__name", "provider_name", "base_url"]
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ["created_at", "event_type", "action", "user", "method", "path", "status_code", "duration_ms"]
+    list_filter = ["event_type", "method", "status_code", "created_at"]
+    search_fields = ["action", "user__username", "path", "request_id"]

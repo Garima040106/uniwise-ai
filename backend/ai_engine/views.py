@@ -1,8 +1,13 @@
 import time
+import hashlib
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from django.conf import settings
+from django.core.cache import cache
+from accounts.models import University
+from accounts.permissions import IsUniversityScopedAccess
 from documents.models import Document
 from flashcards.models import Flashcard
 from quizzes.models import Quiz, Question
@@ -24,18 +29,69 @@ def get_university_id(user):
     return None
 
 
+def get_request_university_id(request, allow_tenant_fallback=True):
+    profile = getattr(request.user, "profile", None) if getattr(request, "user", None) else None
+    if profile and profile.university:
+        return profile.university.id
+
+    if allow_tenant_fallback:
+        tenant = getattr(request, "tenant_university", None)
+        if tenant:
+            return tenant.id
+    return None
+
+
+def _qa_cache_key(university_id, question, course_id=None, document_id=None, knowledge_base="academic", visibility_scope=None):
+    payload = f"{university_id}|{knowledge_base}|{visibility_scope}|{course_id}|{document_id}|{question.strip().lower()}"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"qa_answer:{digest}"
+
+
+def _fetch_cached_answer(cache_key):
+    cached = cache.get(cache_key)
+    if not cached:
+        return None
+    return {
+        "question": cached.get("question", ""),
+        "answer": cached.get("answer", ""),
+        "sources": cached.get("sources", []),
+        "found_in_docs": cached.get("found_in_docs", False),
+        "cached": True,
+    }
+
+
+def _store_cached_answer(cache_key, payload):
+    timeout = getattr(settings, "RAG_ANSWER_CACHE_TIMEOUT", 300)
+    cache.set(cache_key, payload, timeout=timeout)
+
+
+def _get_document_for_generation(request, doc_id):
+    profile = getattr(request.user, "profile", None)
+    university = getattr(profile, "university", None)
+    if university:
+        return Document.objects.filter(
+            id=doc_id,
+            uploaded_by__profile__university=university,
+        ).first()
+    return Document.objects.filter(id=doc_id, uploaded_by=request.user).first()
+
+
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
 def generate_flashcards_view(request):
     """Generate flashcards from a document"""
     doc_id = request.data.get("document_id")
     num_cards = int(request.data.get("num_cards", 10))
     difficulty = request.data.get("difficulty", "medium")
 
-    try:
-        doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
-    except Document.DoesNotExist:
+    doc = _get_document_for_generation(request, doc_id)
+    if not doc:
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
+    if getattr(doc, "knowledge_base", "academic") != "academic":
+        return Response(
+            {"error": "Flashcard generation is only supported for academic documents."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if not doc.extracted_text:
         return Response({"error": "Document has no extracted text"}, status=status.HTTP_400_BAD_REQUEST)
@@ -101,7 +157,7 @@ def generate_flashcards_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
 def generate_quiz_view(request):
     """Generate a quiz from a document"""
     doc_id = request.data.get("document_id")
@@ -109,10 +165,14 @@ def generate_quiz_view(request):
     difficulty = request.data.get("difficulty", "medium")
     title = request.data.get("title", "AI Generated Quiz")
 
-    try:
-        doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
-    except Document.DoesNotExist:
+    doc = _get_document_for_generation(request, doc_id)
+    if not doc:
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
+    if getattr(doc, "knowledge_base", "academic") != "academic":
+        return Response(
+            {"error": "Quiz generation is only supported for academic documents."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if not doc.extracted_text:
         return Response({"error": "Document has no extracted text"}, status=status.HTTP_400_BAD_REQUEST)
@@ -255,15 +315,19 @@ def generate_quiz_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
 def generate_exam_prep_view(request):
     """Generate exam prep slides from a document"""
     doc_id = request.data.get("document_id")
 
-    try:
-        doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
-    except Document.DoesNotExist:
+    doc = _get_document_for_generation(request, doc_id)
+    if not doc:
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
+    if getattr(doc, "knowledge_base", "academic") != "academic":
+        return Response(
+            {"error": "Exam prep is only supported for academic documents."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     start_time = time.time()
     university_id = get_university_id(request.user)
@@ -299,16 +363,20 @@ def generate_exam_prep_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
 def extract_facts_view(request):
     """Extract key facts from a document"""
     doc_id = request.data.get("document_id")
     num_facts = int(request.data.get("num_facts", 10))
 
-    try:
-        doc = Document.objects.get(id=doc_id, uploaded_by=request.user)
-    except Document.DoesNotExist:
+    doc = _get_document_for_generation(request, doc_id)
+    if not doc:
         return Response({"error": "Document not found"}, status=status.HTTP_404_NOT_FOUND)
+    if getattr(doc, "knowledge_base", "academic") != "academic":
+        return Response(
+            {"error": "Fact extraction is only supported for academic documents."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     start_time = time.time()
     university_id = get_university_id(request.user)
@@ -389,7 +457,7 @@ def ollama_status(request):
         })
 # Create your views here.
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
 def ask_question(request):
     """
     Core RAG Q&A - student asks question, AI answers from university docs ONLY
@@ -401,15 +469,68 @@ def ask_question(request):
     if not question:
         return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-    profile = getattr(request.user, "profile", None)
-    university_id = profile.university.id if profile and profile.university else None
+    university_id = get_request_university_id(request, allow_tenant_fallback=False)
 
     if not university_id:
         return Response({
             "error": "You must be affiliated with a university to use this feature"
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    result = answer_question_rag(question, university_id, course_id, document_id=document_id)
+    cache_key = _qa_cache_key(
+        university_id=university_id,
+        question=question,
+        course_id=course_id,
+        document_id=document_id,
+        knowledge_base="academic",
+        visibility_scope=None,
+    )
+    cached_response = _fetch_cached_answer(cache_key)
+    if cached_response:
+        cached_response["university_id"] = university_id
+        return Response(cached_response)
+
+    ai_request = AIRequest.objects.create(
+        requested_by=request.user,
+        document_id=document_id or None,
+        request_type="ask",
+        prompt=question,
+        model_used="llama3.2:3b",
+        status="processing",
+    )
+
+    start_time = time.time()
+    try:
+        result = answer_question_rag(
+            question,
+            university_id,
+            course_id,
+            document_id=document_id,
+            knowledge_base="academic",
+        )
+        processing_time = time.time() - start_time
+
+        ai_request.status = "completed"
+        ai_request.response = (result.get("answer", "") or "")[:4000]
+        ai_request.processing_time_seconds = processing_time
+        ai_request.save(update_fields=["status", "response", "processing_time_seconds"])
+        _store_cached_answer(
+            cache_key,
+            {
+                "question": question,
+                "answer": result.get("answer", ""),
+                "sources": result.get("sources", []),
+                "found_in_docs": result.get("found_in_docs", False),
+            },
+        )
+    except Exception as exc:
+        ai_request.status = "failed"
+        ai_request.response = str(exc)[:4000]
+        ai_request.processing_time_seconds = time.time() - start_time
+        ai_request.save(update_fields=["status", "response", "processing_time_seconds"])
+        return Response(
+            {"error": "Failed to process question right now. Please retry."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     return Response({
         "question": question,
@@ -417,4 +538,132 @@ def ask_question(request):
         "sources": result["sources"],
         "found_in_docs": result["found_in_docs"],
         "university_id": university_id,
+    })
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def ask_university_info_public(request):
+    """
+    Public university information Q&A.
+    Uses university_info knowledge base and only public documents.
+    """
+    question = request.data.get("question")
+    university_id = request.data.get("university_id")
+    if not question:
+        return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not university_id:
+        tenant = getattr(request, "tenant_university", None)
+        university_id = getattr(tenant, "id", None)
+
+    if not university_id:
+        return Response({"error": "university_id is required for public info lookup"}, status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(university_id, str):
+        if not university_id.isdigit():
+            return Response({"error": "university_id must be numeric"}, status=status.HTTP_400_BAD_REQUEST)
+        university_id = int(university_id)
+
+    university = University.objects.filter(id=university_id, is_active=True).first()
+    if not university:
+        return Response({"error": "University not found"}, status=status.HTTP_404_NOT_FOUND)
+    if not university.allow_public_university_info:
+        return Response({"error": "Public university info access is disabled for this tenant"}, status=403)
+
+    cache_key = _qa_cache_key(
+        university_id=university_id,
+        question=question,
+        knowledge_base="university_info",
+        visibility_scope="public",
+    )
+    cached_response = _fetch_cached_answer(cache_key)
+    if cached_response:
+        cached_response["university_id"] = int(university_id)
+        cached_response["knowledge_base"] = "university_info"
+        cached_response["visibility_scope"] = "public"
+        return Response(cached_response)
+
+    result = answer_question_rag(
+        question=question,
+        university_id=university_id,
+        course_id=None,
+        document_id=None,
+        knowledge_base="university_info",
+        visibility_scope="public",
+    )
+    _store_cached_answer(
+        cache_key,
+        {
+            "question": question,
+            "answer": result.get("answer", ""),
+            "sources": result.get("sources", []),
+            "found_in_docs": result.get("found_in_docs", False),
+        },
+    )
+
+    return Response({
+        "question": question,
+        "answer": result["answer"],
+        "sources": result["sources"],
+        "found_in_docs": result["found_in_docs"],
+        "university_id": int(university_id),
+        "knowledge_base": "university_info",
+        "visibility_scope": "public",
+    })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, IsUniversityScopedAccess])
+def ask_university_info_private(request):
+    """
+    Private university information Q&A for authenticated users.
+    Uses university_info knowledge base and can read private+public docs.
+    """
+    question = request.data.get("question")
+    if not question:
+        return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    university_id = get_request_university_id(request, allow_tenant_fallback=False)
+    if not university_id:
+        return Response({"error": "University affiliation is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    cache_key = _qa_cache_key(
+        university_id=university_id,
+        question=question,
+        knowledge_base="university_info",
+        visibility_scope="private",
+    )
+    cached_response = _fetch_cached_answer(cache_key)
+    if cached_response:
+        cached_response["university_id"] = university_id
+        cached_response["knowledge_base"] = "university_info"
+        cached_response["visibility_scope"] = "private"
+        return Response(cached_response)
+
+    result = answer_question_rag(
+        question=question,
+        university_id=university_id,
+        course_id=None,
+        document_id=None,
+        knowledge_base="university_info",
+        visibility_scope=None,
+    )
+    _store_cached_answer(
+        cache_key,
+        {
+            "question": question,
+            "answer": result.get("answer", ""),
+            "sources": result.get("sources", []),
+            "found_in_docs": result.get("found_in_docs", False),
+        },
+    )
+
+    return Response({
+        "question": question,
+        "answer": result["answer"],
+        "sources": result["sources"],
+        "found_in_docs": result["found_in_docs"],
+        "university_id": university_id,
+        "knowledge_base": "university_info",
+        "visibility_scope": "private",
     })

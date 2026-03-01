@@ -126,7 +126,16 @@ def _format_rag_context(results, max_chars):
     return "\n\n".join(pieces), _dedupe_sources(used_results)
 
 
-def build_rag_context(query, university_id, course_id=None, document_id=None, n_results=8, max_chars=None):
+def build_rag_context(
+    query,
+    university_id,
+    course_id=None,
+    document_id=None,
+    n_results=8,
+    max_chars=None,
+    knowledge_base="academic",
+    visibility_scope=None,
+):
     """
     Retrieve and format high-signal chunks from university docs only.
     """
@@ -139,6 +148,8 @@ def build_rag_context(query, university_id, course_id=None, document_id=None, n_
         course_id=course_id,
         n_results=n_results,
         document_id=document_id,
+        knowledge_base=knowledge_base,
+        visibility_scope=visibility_scope,
     )
     return _format_rag_context(results, max_chars=max_chars)
 
@@ -379,6 +390,7 @@ def _build_study_context(
             document_id=document_id,
             n_results=rag_results,
             max_chars=rag_chunk_budget,
+            knowledge_base="academic",
         )
 
     coverage_context = _build_balanced_document_context(
@@ -707,7 +719,14 @@ Respond ONLY with a JSON array:
     return facts
 
 
-def answer_question_rag(question, university_id, course_id=None, document_id=None):
+def answer_question_rag(
+    question,
+    university_id,
+    course_id=None,
+    document_id=None,
+    knowledge_base="academic",
+    visibility_scope=None,
+):
     """
     Answer a student question using ONLY university documents
     This is the core RAG Q&A feature
@@ -719,6 +738,8 @@ def answer_question_rag(question, university_id, course_id=None, document_id=Non
         document_id=document_id,
         n_results=8,
         max_chars=max(settings.AI_CONTEXT_CHAR_LIMIT, 2400),
+        knowledge_base=knowledge_base,
+        visibility_scope=visibility_scope,
     )
 
     if not context:

@@ -9,6 +9,8 @@ from django.conf import settings
 _CHROMA_CLIENT = None
 _EMBEDDING_FUNCTION = None
 _COLLECTION_CACHE = {}
+RAG_NAMESPACE_ACADEMIC = "academic"
+RAG_NAMESPACE_UNIVERSITY_INFO = "university_info"
 _STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how",
     "in", "is", "it", "its", "of", "on", "or", "that", "the", "their", "this",
@@ -16,7 +18,9 @@ _STOPWORDS = {
 }
 
 
-def _collection_name(university_id, course_id=None):
+def _collection_name(university_id, course_id=None, knowledge_base=RAG_NAMESPACE_ACADEMIC):
+    if knowledge_base == RAG_NAMESPACE_UNIVERSITY_INFO:
+        return f"uni_{university_id}_university_info"
     if course_id:
         return f"uni_{university_id}_course_{course_id}"
     return f"uni_{university_id}"
@@ -50,12 +54,12 @@ def get_embedding_function():
     return _EMBEDDING_FUNCTION
 
 
-def get_or_create_collection(university_id, course_id=None):
+def get_or_create_collection(university_id, course_id=None, knowledge_base=RAG_NAMESPACE_ACADEMIC):
     """
     Each university gets its own isolated collection
     Students can ONLY access their university's collection
     """
-    collection_name = _collection_name(university_id, course_id)
+    collection_name = _collection_name(university_id, course_id, knowledge_base=knowledge_base)
 
     if collection_name in _COLLECTION_CACHE:
         return _COLLECTION_CACHE[collection_name]
@@ -66,23 +70,38 @@ def get_or_create_collection(university_id, course_id=None):
     collection = client.get_or_create_collection(
         name=collection_name,
         embedding_function=ef,
-        metadata={"university_id": str(university_id)}
+        metadata={
+            "university_id": str(university_id),
+            "knowledge_base": knowledge_base,
+        }
     )
     _COLLECTION_CACHE[collection_name] = collection
     return collection
 
 
-def _get_target_collections_for_indexing(university_id, course_id=None):
+def _get_target_collections_for_indexing(
+    university_id,
+    course_id=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+):
     """
     Index in university-wide collection always, and in course-specific
     collection when course_id is provided.
     """
     collections = OrderedDict()
-    global_collection = get_or_create_collection(university_id, None)
+    global_collection = get_or_create_collection(
+        university_id,
+        None,
+        knowledge_base=knowledge_base,
+    )
     collections[global_collection.name] = global_collection
 
-    if course_id:
-        course_collection = get_or_create_collection(university_id, course_id)
+    if knowledge_base == RAG_NAMESPACE_ACADEMIC and course_id:
+        course_collection = get_or_create_collection(
+            university_id,
+            course_id,
+            knowledge_base=knowledge_base,
+        )
         collections[course_collection.name] = course_collection
 
     return list(collections.values())
@@ -149,7 +168,13 @@ def _chunk_index_from_metadata(meta):
         return 0
 
 
-def _query_collection_candidates(collection, queries, candidate_pool=30, where=None):
+def _query_collection_candidates(
+    collection,
+    queries,
+    candidate_pool=30,
+    where=None,
+    visibility_scope=None,
+):
     candidates = {}
     per_query = max(6, candidate_pool // max(len(queries), 1))
 
@@ -169,6 +194,9 @@ def _query_collection_candidates(collection, queries, candidate_pool=30, where=N
 
         for doc, meta, distance in zip(documents, metadatas, distances):
             if not doc or not meta:
+                continue
+            visibility = str(meta.get("visibility", "private")).lower()
+            if visibility_scope == "public" and visibility != "public":
                 continue
 
             doc_id = str(meta.get("document_id", ""))
@@ -293,6 +321,8 @@ def _format_results(candidates, n_results):
             "semantic_score": round(candidate.get("semantic_score", 0.0), 4),
             "lexical_score": round(candidate.get("lexical_score", 0.0), 4),
             "document_id": meta.get("document_id"),
+            "knowledge_base": meta.get("knowledge_base", RAG_NAMESPACE_ACADEMIC),
+            "visibility": meta.get("visibility", "private"),
         })
 
     return formatted
@@ -311,7 +341,13 @@ def _merge_results(primary, secondary, n_results):
     return combined[:n_results]
 
 
-def _query_collection_object(collection, query_text, n_results=5, document_id=None):
+def _query_collection_object(
+    collection,
+    query_text,
+    n_results=5,
+    document_id=None,
+    visibility_scope=None,
+):
     query_variants = _build_query_variants(query_text)
 
     where = {"document_id": str(document_id)} if document_id is not None else None
@@ -321,22 +357,38 @@ def _query_collection_object(collection, query_text, n_results=5, document_id=No
         queries=query_variants,
         candidate_pool=candidate_pool,
         where=where,
+        visibility_scope=visibility_scope,
     )
     ranked = _rank_and_diversify_candidates(candidates, query_text=query_text, n_results=max(6, n_results * 2))
     return _format_results(ranked, n_results=n_results)
 
 
-def _query_collection(university_id, query_text, course_id=None, n_results=5, document_id=None):
-    collection = get_or_create_collection(university_id, course_id)
+def _query_collection(
+    university_id,
+    query_text,
+    course_id=None,
+    n_results=5,
+    document_id=None,
+    visibility_scope=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+):
+    collection = get_or_create_collection(university_id, course_id, knowledge_base=knowledge_base)
     return _query_collection_object(
         collection=collection,
         query_text=query_text,
         n_results=n_results,
         document_id=document_id,
+        visibility_scope=visibility_scope,
     )
 
 
-def _query_collection_by_name(collection_name, query_text, n_results=5, document_id=None):
+def _query_collection_by_name(
+    collection_name,
+    query_text,
+    n_results=5,
+    document_id=None,
+    visibility_scope=None,
+):
     client = get_chroma_client()
     ef = get_embedding_function()
     try:
@@ -349,10 +401,13 @@ def _query_collection_by_name(collection_name, query_text, n_results=5, document
         query_text=query_text,
         n_results=n_results,
         document_id=document_id,
+        visibility_scope=visibility_scope,
     )
 
 
-def _list_course_collection_names(university_id):
+def _list_course_collection_names(university_id, knowledge_base=RAG_NAMESPACE_ACADEMIC):
+    if knowledge_base != RAG_NAMESPACE_ACADEMIC:
+        return []
     client = get_chroma_client()
     prefix = f"uni_{university_id}_course_"
     names = []
@@ -363,7 +418,14 @@ def _list_course_collection_names(university_id):
     return names
 
 
-def add_document_to_rag(document, chunks, university_id, course_id=None):
+def add_document_to_rag(
+    document,
+    chunks,
+    university_id,
+    course_id=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+    visibility="private",
+):
     """
     Professor uploads doc → stored in university's isolated RAG collection
     """
@@ -380,13 +442,19 @@ def add_document_to_rag(document, chunks, university_id, course_id=None):
             "document_title": document.title,
             "chunk_index": str(chunk.chunk_index),
             "university_id": str(university_id),
+            "knowledge_base": knowledge_base,
+            "visibility": visibility,
         }
-        if document_course_id:
+        if knowledge_base == RAG_NAMESPACE_ACADEMIC and document_course_id:
             metadata["course_id"] = str(document_course_id)
         metadatas.append(metadata)
 
     if texts:
-        collections = _get_target_collections_for_indexing(university_id, course_id=document_course_id)
+        collections = _get_target_collections_for_indexing(
+            university_id,
+            course_id=document_course_id,
+            knowledge_base=knowledge_base,
+        )
         for collection in collections:
             collection.upsert(
                 documents=texts,
@@ -397,7 +465,15 @@ def add_document_to_rag(document, chunks, university_id, course_id=None):
     return 0
 
 
-def query_rag(query_text, university_id, course_id=None, n_results=5, document_id=None):
+def query_rag(
+    query_text,
+    university_id,
+    course_id=None,
+    n_results=5,
+    document_id=None,
+    visibility_scope=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+):
     """
     Query ONLY the university's documents — fully constrained RAG
     Students only get answers from their university's uploaded content
@@ -406,12 +482,18 @@ def query_rag(query_text, university_id, course_id=None, n_results=5, document_i
         primary_results = _query_collection(
             university_id=university_id,
             query_text=query_text,
-            course_id=course_id,
+            course_id=course_id if knowledge_base == RAG_NAMESPACE_ACADEMIC else None,
             n_results=n_results,
             document_id=document_id,
+            visibility_scope=visibility_scope,
+            knowledge_base=knowledge_base,
         )
 
-        if course_id and len(primary_results) < max(2, n_results // 2):
+        if (
+            knowledge_base == RAG_NAMESPACE_ACADEMIC
+            and course_id
+            and len(primary_results) < max(2, n_results // 2)
+        ):
             # Fallback to university-wide collection for cross-course materials.
             fallback_results = _query_collection(
                 university_id=university_id,
@@ -419,12 +501,21 @@ def query_rag(query_text, university_id, course_id=None, n_results=5, document_i
                 course_id=None,
                 n_results=n_results,
                 document_id=document_id,
+                visibility_scope=visibility_scope,
+                knowledge_base=knowledge_base,
             )
             return _merge_results(primary_results, fallback_results, n_results=n_results)
 
-        if not course_id and len(primary_results) < n_results:
+        if (
+            knowledge_base == RAG_NAMESPACE_ACADEMIC
+            and not course_id
+            and len(primary_results) < n_results
+        ):
             # Backward compatibility: older data may exist only in course collections.
-            course_collection_names = _list_course_collection_names(university_id)
+            course_collection_names = _list_course_collection_names(
+                university_id,
+                knowledge_base=knowledge_base,
+            )
             additional = []
             per_collection = max(2, n_results // 2)
             for collection_name in course_collection_names[:8]:
@@ -434,6 +525,7 @@ def query_rag(query_text, university_id, course_id=None, n_results=5, document_i
                         query_text=query_text,
                         n_results=per_collection,
                         document_id=document_id,
+                        visibility_scope=visibility_scope,
                     )
                 )
             if additional:
@@ -446,14 +538,23 @@ def query_rag(query_text, university_id, course_id=None, n_results=5, document_i
         return []
 
 
-def _get_collections_for_delete(university_id, course_id=None):
+def _get_collections_for_delete(
+    university_id,
+    course_id=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+):
     client = get_chroma_client()
     ef = get_embedding_function()
     prefix = f"uni_{university_id}"
 
     names = []
-    if course_id:
-        names = [_collection_name(university_id), _collection_name(university_id, course_id)]
+    if knowledge_base == RAG_NAMESPACE_UNIVERSITY_INFO:
+        names = [_collection_name(university_id, knowledge_base=knowledge_base)]
+    elif course_id:
+        names = [
+            _collection_name(university_id, knowledge_base=knowledge_base),
+            _collection_name(university_id, course_id, knowledge_base=knowledge_base),
+        ]
     else:
         listed = client.list_collections()
         for collection in listed:
@@ -480,10 +581,19 @@ def _get_collections_for_delete(university_id, course_id=None):
     return collections
 
 
-def delete_document_from_rag(document_id, university_id, course_id=None):
+def delete_document_from_rag(
+    document_id,
+    university_id,
+    course_id=None,
+    knowledge_base=RAG_NAMESPACE_ACADEMIC,
+):
     """Remove a document from RAG when deleted"""
     try:
-        collections = _get_collections_for_delete(university_id, course_id=course_id)
+        collections = _get_collections_for_delete(
+            university_id,
+            course_id=course_id,
+            knowledge_base=knowledge_base,
+        )
         if not collections:
             return True
 

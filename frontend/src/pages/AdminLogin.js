@@ -26,7 +26,7 @@ export default function AdminLogin({ onLogin, onBack }) {
       <div style={{ width: '100%', maxWidth: '420px', padding: '16px' }}>
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#6c63ff' }}>Administration Login</h1>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', color: '#6c63ff' }}>Faculty / Admin Login</h1>
             {onBack && (
               <button type="button" className="btn btn-secondary" onClick={onBack}>
                 Back
@@ -34,7 +34,7 @@ export default function AdminLogin({ onLogin, onBack }) {
             )}
           </div>
           <p style={{ color: '#8f97b6', marginBottom: '14px' }}>
-            Access university-level controls, configuration, and system analytics.
+            Role-aware access for Professor, IT Admin, and Super Admin workspaces with stricter controls.
           </p>
 
           <form onSubmit={handleSubmit}>

@@ -3,7 +3,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from .models import LoginTwoFactorChallenge, University, UserProfile
+from .models import LoginTwoFactorChallenge, University, UniversityIntegration, UserProfile
 
 
 class AccountAuthFlowTests(TestCase):
@@ -67,6 +67,21 @@ class AccountAuthFlowTests(TestCase):
             format="json",
         )
         self.assertEqual(admin_login_res.status_code, 200)
+
+    def test_professor_can_use_admin_login(self):
+        professor_user = User.objects.create_user(username="prof_user", password="TempPass123!")
+        UserProfile.objects.create(
+            user=professor_user,
+            role="professor",
+            university=self.university,
+        )
+
+        res = self.client.post(
+            "/api/accounts/login/admin/",
+            {"username": "prof_user", "password": "TempPass123!"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
 
     @override_settings(DEBUG=True)
     def test_two_factor_login_and_verify(self):
@@ -152,3 +167,43 @@ class AccountAuthFlowTests(TestCase):
         self.assertEqual(res.data.get("provider"), "google")
         self.assertEqual(res.data.get("status"), "ready")
         self.assertIn("accounts.google.com", res.data.get("auth_url", ""))
+
+    def test_integration_upsert_and_list_for_admin(self):
+        admin_user = User.objects.create_user(username="admin_integrations", password="TempPass123!")
+        UserProfile.objects.create(
+            user=admin_user,
+            role="admin",
+            university=self.university,
+        )
+        self.client.force_authenticate(user=admin_user)
+
+        upsert_res = self.client.post(
+            "/api/accounts/integrations/upsert/",
+            {
+                "category": "lms",
+                "provider_name": "Canvas",
+                "status": "active",
+                "base_url": "https://canvas.example.edu",
+                "config": {"sync_courses": True},
+                "api_key": "canvas-secret-key",
+            },
+            format="json",
+        )
+        self.assertEqual(upsert_res.status_code, 200)
+        self.assertTrue(UniversityIntegration.objects.filter(university=self.university, provider_name="Canvas").exists())
+
+        list_res = self.client.get("/api/accounts/integrations/")
+        self.assertEqual(list_res.status_code, 200)
+        self.assertGreaterEqual(len(list_res.data.get("integrations", [])), 1)
+
+    def test_widget_embed_requires_admin_or_professor(self):
+        student_user = User.objects.create_user(username="widget_student", password="TempPass123!")
+        UserProfile.objects.create(
+            user=student_user,
+            role="student",
+            student_id="WGT1001",
+            university=self.university,
+        )
+        self.client.force_authenticate(user=student_user)
+        denied = self.client.get("/api/accounts/widget/embed/")
+        self.assertEqual(denied.status_code, 403)
