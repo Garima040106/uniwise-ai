@@ -2,6 +2,7 @@ import os
 import re
 import PyPDF2
 from docx import Document as DocxDocument
+from pptx import Presentation
 
 
 def extract_text_from_file(file_path):
@@ -18,6 +19,8 @@ def extract_text_from_file(file_path):
             return extract_from_docx(file_path)
         elif ext == ".txt":
             return extract_from_txt(file_path)
+        elif ext == ".pptx":
+            return extract_from_pptx(file_path)
         else:
             return ""
     except Exception as e:
@@ -30,7 +33,9 @@ def extract_from_pdf(file_path):
     with open(file_path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text() or ""
+            if page_text:
+                text += page_text + "\n"
     return text.strip()
 
 
@@ -40,8 +45,26 @@ def extract_from_docx(file_path):
 
 
 def extract_from_txt(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
+    for encoding in ("utf-8", "utf-8-sig", "latin-1"):
+        try:
+            with open(file_path, "r", encoding=encoding) as f:
+                return f.read().strip()
+        except UnicodeDecodeError:
+            continue
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         return f.read().strip()
+
+
+def extract_from_pptx(file_path):
+    presentation = Presentation(file_path)
+    lines = []
+    for slide in presentation.slides:
+        for shape in slide.shapes:
+            text = getattr(shape, "text", "") or ""
+            text = text.strip()
+            if text:
+                lines.append(text)
+    return "\n".join(lines).strip()
 
 
 def _split_long_text(segment, max_size):

@@ -45,6 +45,12 @@ def upload_document(request):
 
     try:
         extracted_text = extract_text_from_file(doc.file.path)
+        if not extracted_text.strip():
+            raise ValueError(
+                "Could not extract text from document. "
+                "Use a text-based PDF/DOCX/TXT/PPTX file (not scanned images)."
+            )
+
         doc.extracted_text = extracted_text
         doc.status = "completed"
         doc.is_processed = True
@@ -77,9 +83,15 @@ def upload_document(request):
             "message": "Document uploaded and indexed in university RAG!"
         }, status=status.HTTP_201_CREATED)
 
+    except ValueError as e:
+        doc.status = "failed"
+        doc.is_processed = False
+        doc.save(update_fields=["status", "is_processed", "updated_at"])
+        return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         doc.status = "failed"
-        doc.save()
+        doc.is_processed = False
+        doc.save(update_fields=["status", "is_processed", "updated_at"])
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

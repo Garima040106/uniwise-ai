@@ -116,6 +116,42 @@
   flex: 1 1 180px;
 }
 
+.student-ai-intro {
+  display: grid;
+  gap: 10px;
+}
+
+.student-ai-intro h3 {
+  margin: 0;
+}
+
+.student-prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.student-prompt-chip {
+  border: 1px solid #334572;
+  background: #0f162c;
+  color: #c8d5fb;
+  border-radius: 999px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.student-prompt-chip:hover {
+  border-color: #3b82f6;
+  background: #16244a;
+  color: #ffffff;
+}
+
+.student-grid-two > .card .btn {
+  margin-top: 12px;
+}
+
 .student-muted {
   color: #95a3ca;
   margin: 6px 0 0;

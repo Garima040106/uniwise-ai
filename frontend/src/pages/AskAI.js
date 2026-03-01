@@ -1,16 +1,25 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { askQuestion } from '../services/api';
+import './AskAI.css';
 
-export default function AskAI() {
+export default function AskAI({ presetQuestion = '', presetVersion = 0 }) {
   const [question, setQuestion] = useState('');
-  const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    if (!presetQuestion) return;
+    setQuestion(presetQuestion);
+    if (textareaRef.current) textareaRef.current.focus();
+  }, [presetQuestion, presetVersion]);
 
   const handleAsk = async () => {
-    if (!question.trim()) return;
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion) return;
+
     setLoading(true);
-    const q = question;
+    const q = trimmedQuestion;
     setQuestion('');
 
     try {
@@ -18,80 +27,82 @@ export default function AskAI() {
       const entry = {
         question: q,
         answer: res.data.answer,
-        sources: res.data.sources,
+        sources: res.data.sources || [],
         found: res.data.found_in_docs,
       };
-      setHistory([entry, ...history]);
-      setResponse(entry);
+      setHistory((current) => [entry, ...current]);
     } catch (err) {
-      setResponse({
+      const entry = {
         question: q,
         answer: 'Error: Could not get a response. Make sure you are affiliated with a university.',
         sources: [],
         found: false,
-      });
+      };
+      setHistory((current) => [entry, ...current]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <h2 style={{ marginBottom: '8px', color: '#6c63ff' }}>🤖 Ask Uniwise AI</h2>
-      <p style={{ color: '#8888aa', marginBottom: '24px' }}>
-        Ask anything — I'll answer only from your university's uploaded documents.
-      </p>
+    <div className="ask-ai">
+      <header className="ask-ai-head">
+        <h2>Ask Uniwise AI</h2>
+        <p>Ask directly about academics, admin tasks, campus services, or your learning progress.</p>
+      </header>
 
-      {/* Question Input */}
-      <div className="card" style={{ marginBottom: '24px' }}>
+      <div className="ask-ai-input-wrap">
         <textarea
+          ref={textareaRef}
           className="input"
           rows={3}
-          placeholder="Ask a question about your course material..."
+          placeholder="Type your question..."
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleAsk()}
-          style={{ resize: 'vertical' }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleAsk();
+            }
+          }}
         />
-        <button className="btn btn-primary" onClick={handleAsk}
-          disabled={loading || !question.trim()} style={{ width: '100%' }}>
-          {loading ? '🤔 Thinking...' : '🚀 Ask AI'}
+        <button
+          className="btn btn-primary ask-ai-submit"
+          onClick={handleAsk}
+          disabled={loading || !question.trim()}
+        >
+          {loading ? 'Thinking...' : 'Ask AI'}
         </button>
       </div>
 
-      {/* Response */}
-      {history.map((entry, idx) => (
-        <div key={idx} className="card" style={{ marginBottom: '16px' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <p style={{ color: '#8888aa', fontSize: '12px', marginBottom: '4px' }}>YOUR QUESTION</p>
-            <p style={{ fontWeight: '600' }}>{entry.question}</p>
-          </div>
+      <section className="ask-ai-history">
+        {history.length === 0 && (
+          <p className="ask-ai-empty">No messages yet. Ask your first question.</p>
+        )}
+        {history.map((entry, idx) => (
+          <article key={`${entry.question}-${idx}`} className="ask-ai-item">
+            <div className="ask-ai-question">
+              <p>Question</p>
+              <strong>{entry.question}</strong>
+            </div>
 
-          <div style={{
-            background: '#0f0f1a', borderRadius: '8px', padding: '16px',
-            borderLeft: `4px solid ${entry.found ? '#6c63ff' : '#ff6584'}`
-          }}>
-            <p style={{ color: '#8888aa', fontSize: '12px', marginBottom: '8px' }}>
-              {entry.found ? '✅ ANSWER FROM UNIVERSITY DOCS' : '⚠️ NOT FOUND IN DOCS'}
-            </p>
-            <p style={{ lineHeight: '1.6' }}>{entry.answer}</p>
-          </div>
+            <div className={`ask-ai-answer ${entry.found ? 'ask-ai-answer-doc' : 'ask-ai-answer-generic'}`}>
+              <p className="ask-ai-source-note">
+                {entry.found ? 'Answer from university documents' : 'General answer (no direct doc match)'}
+              </p>
+              <p>{entry.answer}</p>
+            </div>
 
-          {entry.sources.length > 0 && (
-            <div style={{ marginTop: '12px' }}>
-              <p style={{ color: '#8888aa', fontSize: '12px', marginBottom: '8px' }}>📚 SOURCES</p>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {entry.sources.length > 0 && (
+              <div className="ask-ai-sources">
                 {entry.sources.map((source, i) => (
-                  <span key={i} style={{
-                    background: '#1a1a3a', padding: '4px 10px',
-                    borderRadius: '20px', fontSize: '12px', color: '#6c63ff'
-                  }}>{source}</span>
+                  <span key={`${source}-${i}`}>{source}</span>
                 ))}
               </div>
-            </div>
-          )}
-        </div>
-      ))}
+            )}
+          </article>
+        ))}
+      </section>
     </div>
   );
 }

@@ -1,61 +1,86 @@
 # Uniwise AI
 
-Uniwise AI is a study assistant for university students that turns uploaded documents into:
-- Flashcards
-- Quizzes
-- Focused Q&A (RAG-based answers from uploaded content)
-- Progress tracking on the dashboard
+Uniwise AI is a university-focused custom LLM platform with:
+- Public pre-login guidance for prospective students
+- Student and admin authentication flows
+- Post-login student learning workspace
+- University-scoped RAG for Q&A, flashcards, quizzes, and analytics
 
-The project uses a Django backend, a React frontend, PostgreSQL, ChromaDB for vector retrieval, and Ollama (`llama3.2:3b`) for generation.
+The stack uses Django + DRF, React, PostgreSQL, ChromaDB, and Ollama (`llama3.2:3b` by default).
 
-## What This Project Solves
+## Product Overview
 
-Students often upload large PDFs and don’t know if they’ve actually covered the syllabus.  
-Uniwise AI helps by generating study material from documents and showing progress based on attempted quiz/flashcard coverage.
+### 1) Pre-auth experience
+- 3-entry hub:
+  - Design Your Custom University
+  - Student Login
+  - Administration Login
+- Custom university landing page with:
+  - University profile selection (including Indian universities)
+  - Branding/theme customization
+  - Floating chatbot widget preview
+  - Offline-safe AI status handling
 
-## Current Features
+### 2) Student authentication
+- Student ID + password login
+- New student registration
+- Forgot/reset password flow
+- Optional 2FA login challenge
+- SSO provider scaffold (Google and university SSO)
 
-- Document upload and indexing (PDF/DOCX/TXT/PPTX)
-- University-isolated RAG retrieval
-- Quiz generation with improved section coverage across the document
-- Flashcard generation
-- Quiz completion and result analysis (accuracy, weak areas, recommendation)
-- Delete actions for flashcards/quizzes/documents
-- Dashboard with:
-  - AI status
-  - overall stats
-  - document-wise coverage score (1–100)
+### 3) Student portal
+- Dashboard: quick stats, deadlines, recent activity, quick actions
+- AI Chatbot tab: simplified prompt-first UI with quick prompt chips
+- Learning tools: flashcards, quizzes, document workspace, AI prep
+- Progress tracking: skill progress, curve, course-level breakdown
+- Additional placeholders: calendar, notifications, profile settings, help
+
+### 4) Admin workspace
+- Admin login route and role-gated backend check
+- Existing app workspace for dashboard, AI, flashcards, quizzes, documents
+
+### 5) AI + document pipeline
+- Upload/index document types: `.pdf`, `.docx`, `.txt`, `.pptx`
+- University-isolated retrieval for Q&A
+- Flashcard/quiz/exam-prep generation
+- Uploads now fail early if text extraction is empty (clear API error message)
+- `.pptx` text extraction support is implemented
 
 ## Tech Stack
 
-- Backend: Django + Django REST Framework
-- Frontend: React (CRA)
-- Database: PostgreSQL
+- Backend: Django 5 + Django REST Framework
+- Frontend: React (Create React App)
+- Database: PostgreSQL (or SQLite for local fallback)
 - Vector Store: ChromaDB
-- LLM runtime: Ollama
-- Containerization: Docker Compose
+- LLM Runtime: Ollama
+- Deployment: Docker Compose (dev + prod variants)
 
 ## Repository Structure
 
 ```text
-backend/      Django apps (accounts, documents, ai_engine, quizzes, analytics, ...)
-frontend/     React app
-docker-compose.yml
+backend/                  Django apps (accounts, ai_engine, analytics, documents, quizzes, ...)
+frontend/                 React app
+docker-compose.yml        Local backend + DB stack
+docker-compose.prod.yml   Production stack (backend + db + nginx web)
+deploy_prod.sh            Production deploy helper
 requirements.txt
+requirements.prod.txt
 ```
 
-## Local Run (Recommended)
+## Local Development
 
-### 1) Start backend services
+### Option A: Docker backend + local frontend (recommended)
+
+1) Start backend + PostgreSQL:
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-Backend API will be available at: `http://localhost:8000`
+Backend API: `http://localhost:8000/api`
 
-### 2) Start frontend
+2) Start frontend:
 
 ```bash
 cd frontend
@@ -63,71 +88,108 @@ npm install
 npm start
 ```
 
-Frontend will run at: `http://localhost:3000`
+Frontend: `http://localhost:3000`
 
-## Production Deploy (One Command)
+### Option B: Run backend without Docker
 
-This repo now includes a production Docker stack with:
-- Django ASGI server (`uvicorn`) + automatic `migrate` + `collectstatic`
-- PostgreSQL wired as the Django database
-- React production build served by Nginx
-- Nginx reverse proxy for `/api` and `/admin`
-- Persistent volumes for Postgres, media, staticfiles, and ChromaDB
-- Lean backend install via `requirements.prod.txt` for faster builds
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cd backend
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
+```
 
-### 1) Run deploy script
+## Production Deployment
+
+Run:
 
 ```bash
 ./deploy_prod.sh
 ```
 
-If `.env.prod` does not exist, it is auto-created from `.env.prod.example` with a generated `SECRET_KEY`.
+This uses `docker-compose.prod.yml` and:
+- Runs Django with `uvicorn`
+- Applies migrations and collects static files
+- Serves React production build with Nginx
+- Proxies `/api` and `/admin`
+- Persists Postgres/media/static/chroma volumes
 
-### 2) Open app
+App URL: `http://localhost` (or `http://localhost:${WEB_PORT}`)
 
-- App URL: `http://localhost` (or `http://localhost:<WEB_PORT>`)
+## Environment Variables
 
-### 3) Optional: customize production env
-
-Edit `.env.prod` to set:
-- `ALLOWED_HOSTS`
-- `CORS_ALLOWED_ORIGINS`
-- `CSRF_TRUSTED_ORIGINS`
+Key variables:
 - `OLLAMA_BASE_URL`
-- TLS-related flags (`SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT`)
+- `OLLAMA_MODEL`
+- `MAX_UPLOAD_SIZE`
+- `RAG_MAX_DISTANCE`
+- `REACT_APP_API_BASE_URL`
+- `GOOGLE_OAUTH_CLIENT_ID` (enables Google OAuth redirect mode)
+- `SSO_PROVIDERS` (defaults to `google,university-sso`)
+- `FRONTEND_RESET_PASSWORD_URL`
 
-## Typical Testing Flow
+Start from `.env.prod.example` for production.
 
-1. Login (student/admin)
-2. Upload a document from **Documents**
-3. Generate flashcards or a quiz
-4. Submit quiz and check analysis block
-5. Open **Dashboard → Document Progress** and verify coverage score
+## Quick Test Setup
 
-## API Notes
+1) Create a university (if none exists) via Django admin (`/admin`) or shell.
+2) Create accounts:
+- Student account via UI registration on Student Login page
+- Admin account via Django admin or shell (profile role must be `admin`)
+3) Login as student and upload a text-based document.
+4) Generate flashcards/quizzes and test Ask AI.
 
-- Base URL: `/api`
-- Key routes:
-  - `/api/documents/*`
-  - `/api/ai/*`
-  - `/api/quizzes/*`
-  - `/api/analytics/*`
+## API Surface
 
-## Environment Notes
+Base URL: `/api`
 
-This setup is usable on CPU-only systems, but generation can be slower.  
-For faster iterations, start with fewer generated items (for example 2–3 questions/cards).
+- Accounts: `/api/accounts/*`
+  - `register`, `login/student`, `login/admin`, `two-factor/verify`
+  - `password/forgot`, `password/reset`
+  - `sso/providers`, `sso/start`, `sso/callback`
+- Documents: `/api/documents/*`
+- AI Engine: `/api/ai/*`
+- Flashcards: `/api/flashcards/*`
+- Quizzes: `/api/quizzes/*`
+- Analytics: `/api/analytics/*`
 
-## Security / Access Model
+## Troubleshooting
 
-- Student view is constrained to their university/document scope for RAG.
-- Planned next step: **professor-only question-bank upload and retrieval** (separate flow and role-gated access).
+### "Could not extract text from document"
+Cause:
+- Scanned/image-only PDF, or document without extractable text.
 
-## Known Practical Constraints
+Fix:
+- Re-upload a text-based file (`pdf/docx/txt/pptx`), or OCR the PDF first.
+- Check document status in Documents view (`completed` + indexed).
 
-- Large document generation quality depends on model context budget.
-- CPU-only inference may increase response time for longer prompts.
+### Ollama shows offline
+Check:
+- Ollama daemon running
+- `OLLAMA_BASE_URL` reachable from backend
+- Configured model exists (`ollama list`)
+
+### 2FA code not received
+Notes:
+- In `DEBUG=True`, API can return `debug_code` for local testing.
+- In production, configure email delivery settings.
+
+### SSO returns scaffold response
+Notes:
+- Current SSO includes provider start/callback scaffolding.
+- Set `GOOGLE_OAUTH_CLIENT_ID` for Google OAuth authorization URL mode.
+
+## Known Constraints
+
+- CPU-only inference is slower on long prompts.
+- Generation quality depends on extracted document quality and context budget.
+- Current flashcard/quiz generation uses documents owned by the authenticated user.
 
 ## Status
 
-This repository is actively evolving. The current version is focused on reliable student workflows first (upload → generate → practice → track).
+The platform is actively evolving with a focus on:
+- Reliable student learning workflows
+- University-specific assistant behavior
+- Cleaner UI/UX and clearer onboarding flows

@@ -20,38 +20,20 @@ const UPCOMING_DEADLINES = [
   { title: 'Financial aid update window', date: 'Sept 23' },
 ];
 
-const ACADEMIC_HELP_ITEMS = [
-  'Ask questions about course materials (RAG from uploaded docs)',
-  'Get homework hints (not direct answers)',
-  'Explain concepts in simple language',
-  'Generate practice problems',
-  'Summarize long chapters',
-];
-
-const UNIVERSITY_SERVICE_ITEMS = [
-  'Course registration help',
-  'Check exam schedule',
-  'Library book availability',
-  'Campus event information',
-  'Career center services',
-  'Health services information',
-  'IT support and troubleshooting',
-  'Report maintenance issues',
-  'Dining hall hours',
-  'Parking information',
-];
-
-const ADMIN_QUERY_ITEMS = [
-  'Transcript request process',
-  'Add/drop course deadlines',
-  'Financial aid status',
-  'Degree audit (graduation requirements)',
-  'Letter of recommendation requests',
+const QUICK_AI_PROMPTS = [
+  'Summarize this unit in simple points',
+  'What should I focus on for my next quiz?',
+  'How do I complete course registration?',
+  'Show upcoming deadlines for this month',
+  'How can I request my transcript?',
+  'Give me a revision plan for this week',
 ];
 
 export default function StudentPortal({ user, onLogout }) {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [workspaceView, setWorkspaceView] = useState('');
+  const [quickPrompt, setQuickPrompt] = useState('');
+  const [quickPromptVersion, setQuickPromptVersion] = useState(0);
   const [stats, setStats] = useState(null);
   const [aiStatus, setAiStatus] = useState({ status: 'checking' });
   const [docProgress, setDocProgress] = useState([]);
@@ -184,7 +166,6 @@ export default function StudentPortal({ user, onLogout }) {
                 className="btn btn-primary"
                 onClick={() => {
                   setActiveSection('ai');
-                  setWorkspaceView('ask');
                 }}
               >
                 Ask AI
@@ -216,36 +197,35 @@ export default function StudentPortal({ user, onLogout }) {
 
       {activeSection === 'ai' && (
         <section className="student-portal-section">
-          <div className="student-grid-three">
-            <article className="card">
-              <h3>Academic Help</h3>
-              <ul className="student-feature-list">
-                {ACADEMIC_HELP_ITEMS.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-
-            <article className="card">
-              <h3>University Services</h3>
-              <ul className="student-feature-list">
-                {UNIVERSITY_SERVICE_ITEMS.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-
-            <article className="card">
-              <h3>Administrative Queries</h3>
-              <ul className="student-feature-list">
-                {ADMIN_QUERY_ITEMS.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
+          <article className="card student-ai-intro">
+            <div>
+              <h3>Ask once, get support across academics and campus tasks</h3>
+              <p className="student-muted">
+                Use one assistant for study help, university services, admin requests, and your personal
+                learning progress.
+              </p>
+              <p className="student-muted">
+                Status: {aiStatus?.status || 'unknown'} {aiStatus?.model ? `| ${aiStatus.model}` : ''}
+              </p>
+            </div>
+            <div className="student-prompt-chips">
+              {QUICK_AI_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  className="student-prompt-chip"
+                  onClick={() => {
+                    setQuickPrompt(prompt);
+                    setQuickPromptVersion((current) => current + 1);
+                  }}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          </article>
           <div className="card">
-            <AskAI />
+            <AskAI presetQuestion={quickPrompt} presetVersion={quickPromptVersion} />
           </div>
         </section>
       )}
@@ -255,14 +235,10 @@ export default function StudentPortal({ user, onLogout }) {
           <div className="student-grid-two">
             <article className="card">
               <h3>Flashcards</h3>
-              <ul className="student-feature-list">
-                <li>Auto-generate from documents (AI-powered)</li>
-                <li>Manual creation and study sets</li>
-                <li>Spaced repetition scheduling</li>
-                <li>Filter by subject/course/difficulty</li>
-                <li>Share sets with classmates (optional)</li>
-                <li>Import/export flashcards</li>
-              </ul>
+              <p className="student-muted">
+                Generate cards from your docs, revise with spaced repetition, and keep sets organized by
+                course.
+              </p>
               <button type="button" className="btn btn-secondary" onClick={() => setWorkspaceView('flashcards')}>
                 Open Flashcards Workspace
               </button>
@@ -270,13 +246,9 @@ export default function StudentPortal({ user, onLogout }) {
 
             <article className="card">
               <h3>Quizzes</h3>
-              <ul className="student-feature-list">
-                <li>AI-generated from course materials</li>
-                <li>Practice mode and exam mode</li>
-                <li>Difficulty levels (easy/medium/hard)</li>
-                <li>Quiz history and analytics</li>
-                <li>Wrong answer review and retake option</li>
-              </ul>
+              <p className="student-muted">
+                Practice or exam mode quizzes with adaptive difficulty, score history, and retake support.
+              </p>
               <button type="button" className="btn btn-secondary" onClick={() => setWorkspaceView('quiz')}>
                 Open Quiz Workspace
               </button>
@@ -286,12 +258,9 @@ export default function StudentPortal({ user, onLogout }) {
           <div className="student-grid-two">
             <article className="card">
               <h3>Study Materials</h3>
-              <ul className="student-feature-list">
-                <li>Access all course documents</li>
-                <li>Search within documents</li>
-                <li>Bookmarks and highlights (Phase 2)</li>
-                <li>Download PDFs (if allowed by professor)</li>
-              </ul>
+              <p className="student-muted">
+                Access uploaded course files quickly and open focused document search when needed.
+              </p>
               <button type="button" className="btn btn-secondary" onClick={() => setWorkspaceView('documents')}>
                 Open Documents Workspace
               </button>
@@ -299,12 +268,9 @@ export default function StudentPortal({ user, onLogout }) {
 
             <article className="card">
               <h3>Exam Prep</h3>
-              <ul className="student-feature-list">
-                <li>AI-generated study guide</li>
-                <li>Key concepts extraction</li>
-                <li>Practice question bank</li>
-                <li>Weak topic identification</li>
-              </ul>
+              <p className="student-muted">
+                Use AI to build a short prep plan, surface weak topics, and create targeted practice.
+              </p>
               <button type="button" className="btn btn-secondary" onClick={() => setWorkspaceView('ask')}>
                 Open AI Prep Assistant
               </button>
