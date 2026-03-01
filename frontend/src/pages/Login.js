@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { login } from '../services/api';
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, onBack }) {
   const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,6 +28,13 @@ export default function Login({ onLogin }) {
     }}>
       <div style={{ width: '100%', maxWidth: '400px', padding: '20px' }}>
         <div className="card" style={{ textAlign: 'center' }}>
+          {onBack && (
+            <div style={{ textAlign: 'left', marginBottom: '10px' }}>
+              <button className="btn btn-secondary" type="button" onClick={onBack}>
+                Back to home
+              </button>
+            </div>
+          )}
           <div style={{ fontSize: '48px', marginBottom: '8px' }}>🎓</div>
           <h1 style={{ color: '#6c63ff', fontSize: '28px', marginBottom: '4px' }}>Uniwise AI</h1>
           <p style={{ color: '#8888aa', marginBottom: '32px' }}>Your University AI Learning Assistant</p>

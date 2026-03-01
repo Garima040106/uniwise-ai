@@ -37,10 +37,17 @@ API.interceptors.request.use((config) => {
 
 // Auth
 export const login = (data) => API.post('/accounts/login/', data);
+export const loginStudent = (data) => API.post('/accounts/login/student/', data);
+export const loginAdmin = (data) => API.post('/accounts/login/admin/', data);
 export const register = (data) => API.post('/accounts/register/', data);
 export const logout = () => API.post('/accounts/logout/');
 export const getProfile = () => API.get('/accounts/profile/');
 export const getUniversities = () => API.get('/accounts/universities/');
+export const verifyTwoFactor = (data) => API.post('/accounts/two-factor/verify/', data);
+export const forgotPassword = (data) => API.post('/accounts/password/forgot/', data);
+export const resetPassword = (data) => API.post('/accounts/password/reset/', data);
+export const getSSOProviders = () => API.get('/accounts/sso/providers/');
+export const startSSO = (data) => API.post('/accounts/sso/start/', data);
 
 // Documents
 export const uploadDocument = (formData) => API.post('/documents/upload/', formData, {

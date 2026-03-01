@@ -1,0 +1,185 @@
+.student-portal-shell {
+  min-height: 100vh;
+  padding: 24px;
+  background: radial-gradient(circle at 15% 14%, rgba(37, 99, 235, 0.14), transparent 34%),
+    radial-gradient(circle at 82% 12%, rgba(20, 184, 166, 0.12), transparent 38%),
+    #0b0f1e;
+}
+
+.student-portal-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.student-portal-top h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.student-portal-top p {
+  margin: 6px 0 0;
+  color: #98a6cc;
+  max-width: 720px;
+  line-height: 1.45;
+}
+
+.student-portal-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.student-nav-btn {
+  border: 1px solid #344066;
+  background: #11172e;
+  color: #c7d4ff;
+  padding: 8px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.student-nav-btn-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.student-portal-section {
+  display: grid;
+  gap: 14px;
+}
+
+.student-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.student-stat {
+  border: 1px solid #324064;
+  background: #10162b;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.student-stat strong {
+  display: block;
+  font-size: 1.3rem;
+}
+
+.student-stat span {
+  font-size: 12px;
+  color: #9facd0;
+}
+
+.student-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.student-grid-three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.student-list,
+.student-feed,
+.student-feature-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #ccd7fa;
+  display: grid;
+  gap: 8px;
+}
+
+.student-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.student-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.student-actions .btn {
+  flex: 1 1 180px;
+}
+
+.student-muted {
+  color: #95a3ca;
+  margin: 6px 0 0;
+}
+
+.student-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.student-progress-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #10162b;
+  overflow: hidden;
+}
+
+.student-progress-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
+}
+
+.student-course-progress {
+  display: grid;
+  gap: 10px;
+}
+
+.student-curve {
+  height: 140px;
+  border: 1px solid #2f3a5f;
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  align-items: flex-end;
+  gap: 7px;
+  margin-top: 10px;
+  background: #10162b;
+}
+
+.student-curve span {
+  flex: 1;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #14b8a6, #2563eb);
+}
+
+@media (max-width: 1020px) {
+  .student-grid-three {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 840px) {
+  .student-stats-grid,
+  .student-grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .student-portal-shell {
+    padding: 16px;
+  }
+
+  .student-portal-top {
+    flex-direction: column;
+  }
+}

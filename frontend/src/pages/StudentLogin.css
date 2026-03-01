@@ -1,0 +1,109 @@
+.student-auth-shell {
+  min-height: 100vh;
+  position: relative;
+  background: radial-gradient(circle at 18% 16%, rgba(37, 99, 235, 0.22), transparent 36%),
+    radial-gradient(circle at 80% 12%, rgba(20, 184, 166, 0.2), transparent 34%),
+    #0b0f1e;
+}
+
+.student-auth-overlay {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 36px 36px;
+  opacity: 0.26;
+}
+
+.student-auth-content {
+  position: relative;
+  z-index: 2;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 36px 18px 70px;
+}
+
+.student-auth-panel {
+  border: 1px solid #2f3655;
+}
+
+.student-auth-head h1 {
+  margin: 12px 0 6px;
+  font-size: 1.8rem;
+}
+
+.student-auth-head p {
+  margin: 0 0 14px;
+  color: #9ea8c7;
+  line-height: 1.45;
+}
+
+.student-auth-label {
+  display: block;
+  font-size: 13px;
+  color: #97a3c8;
+  margin-bottom: 6px;
+}
+
+.student-auth-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.student-auth-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #c9d2ef;
+}
+
+.student-link-btn {
+  border: none;
+  background: transparent;
+  color: #7ea2ff;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+
+.student-auth-submit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.student-sso-row {
+  margin-top: 8px;
+}
+
+.student-auth-divider {
+  height: 1px;
+  background: #2e3552;
+  margin: 16px 0;
+}
+
+.student-register-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.student-register-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.student-register-form {
+  margin-top: 10px;
+}
+
+@media (max-width: 700px) {
+  .student-auth-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
