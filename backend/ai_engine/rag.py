@@ -79,6 +79,26 @@ def get_or_create_collection(university_id, course_id=None, knowledge_base=RAG_N
     return collection
 
 
+def get_collection_if_exists(university_id, course_id=None, knowledge_base=RAG_NAMESPACE_ACADEMIC):
+    """
+    Query path should not create empty collections.
+    Return existing collection if present, else None.
+    """
+    collection_name = _collection_name(university_id, course_id, knowledge_base=knowledge_base)
+    if collection_name in _COLLECTION_CACHE:
+        return _COLLECTION_CACHE[collection_name]
+
+    client = get_chroma_client()
+    ef = get_embedding_function()
+    try:
+        collection = client.get_collection(name=collection_name, embedding_function=ef)
+    except Exception:
+        return None
+
+    _COLLECTION_CACHE[collection_name] = collection
+    return collection
+
+
 def _get_target_collections_for_indexing(
     university_id,
     course_id=None,
@@ -372,7 +392,9 @@ def _query_collection(
     visibility_scope=None,
     knowledge_base=RAG_NAMESPACE_ACADEMIC,
 ):
-    collection = get_or_create_collection(university_id, course_id, knowledge_base=knowledge_base)
+    collection = get_collection_if_exists(university_id, course_id, knowledge_base=knowledge_base)
+    if collection is None:
+        return []
     return _query_collection_object(
         collection=collection,
         query_text=query_text,

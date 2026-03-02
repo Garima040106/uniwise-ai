@@ -8,6 +8,7 @@ from django.conf import settings
 from django.core.cache import cache
 from accounts.models import University
 from accounts.permissions import IsUniversityScopedAccess
+from courses.models import Course
 from documents.models import Document
 from flashcards.models import Flashcard
 from quizzes.models import Quiz, Question
@@ -39,6 +40,30 @@ def get_request_university_id(request, allow_tenant_fallback=True):
         if tenant:
             return tenant.id
     return None
+
+
+def _parse_optional_int(raw_value, field_name):
+    if raw_value in (None, ""):
+        return None, None
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be an integer"
+    if parsed <= 0:
+        return None, f"{field_name} must be a positive integer"
+    return parsed, None
+
+
+def _parse_positive_int(raw_value, field_name, default_value):
+    if raw_value in (None, ""):
+        return default_value, None
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be an integer"
+    if parsed <= 0:
+        return None, f"{field_name} must be greater than 0"
+    return parsed, None
 
 
 def _qa_cache_key(university_id, question, course_id=None, document_id=None, knowledge_base="academic", visibility_scope=None):
@@ -81,7 +106,9 @@ def _get_document_for_generation(request, doc_id):
 def generate_flashcards_view(request):
     """Generate flashcards from a document"""
     doc_id = request.data.get("document_id")
-    num_cards = int(request.data.get("num_cards", 10))
+    num_cards, num_cards_error = _parse_positive_int(request.data.get("num_cards"), "num_cards", 10)
+    if num_cards_error:
+        return Response({"error": num_cards_error}, status=status.HTTP_400_BAD_REQUEST)
     difficulty = request.data.get("difficulty", "medium")
 
     doc = _get_document_for_generation(request, doc_id)
@@ -161,7 +188,9 @@ def generate_flashcards_view(request):
 def generate_quiz_view(request):
     """Generate a quiz from a document"""
     doc_id = request.data.get("document_id")
-    num_questions = int(request.data.get("num_questions", 5))
+    num_questions, num_questions_error = _parse_positive_int(request.data.get("num_questions"), "num_questions", 5)
+    if num_questions_error:
+        return Response({"error": num_questions_error}, status=status.HTTP_400_BAD_REQUEST)
     difficulty = request.data.get("difficulty", "medium")
     title = request.data.get("title", "AI Generated Quiz")
 
@@ -367,7 +396,9 @@ def generate_exam_prep_view(request):
 def extract_facts_view(request):
     """Extract key facts from a document"""
     doc_id = request.data.get("document_id")
-    num_facts = int(request.data.get("num_facts", 10))
+    num_facts, num_facts_error = _parse_positive_int(request.data.get("num_facts"), "num_facts", 10)
+    if num_facts_error:
+        return Response({"error": num_facts_error}, status=status.HTTP_400_BAD_REQUEST)
 
     doc = _get_document_for_generation(request, doc_id)
     if not doc:
@@ -463,8 +494,8 @@ def ask_question(request):
     Core RAG Q&A - student asks question, AI answers from university docs ONLY
     """
     question = request.data.get("question")
-    course_id = request.data.get("course_id")
-    document_id = request.data.get("document_id")
+    raw_course_id = request.data.get("course_id")
+    raw_document_id = request.data.get("document_id")
 
     if not question:
         return Response({"error": "Question is required"}, status=status.HTTP_400_BAD_REQUEST)
@@ -475,6 +506,21 @@ def ask_question(request):
         return Response({
             "error": "You must be affiliated with a university to use this feature"
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    course_id, course_error = _parse_optional_int(raw_course_id, "course_id")
+    if course_error:
+        return Response({"error": course_error}, status=status.HTTP_400_BAD_REQUEST)
+    if course_id and not Course.objects.filter(id=course_id, university_id=university_id).exists():
+        return Response({"error": "course_id is invalid for your university"}, status=status.HTTP_400_BAD_REQUEST)
+
+    document_id, doc_error = _parse_optional_int(raw_document_id, "document_id")
+    if doc_error:
+        return Response({"error": doc_error}, status=status.HTTP_400_BAD_REQUEST)
+    if document_id and not Document.objects.filter(
+        id=document_id,
+        uploaded_by__profile__university_id=university_id,
+    ).exists():
+        return Response({"error": "document_id is invalid for your university"}, status=status.HTTP_400_BAD_REQUEST)
 
     cache_key = _qa_cache_key(
         university_id=university_id,
