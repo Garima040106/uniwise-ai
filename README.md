@@ -54,6 +54,31 @@ Uniwise AI addresses these with:
 
 ---
 
+## ℹ️ About
+
+Uniwise AI is an early-stage prototype demonstrating how cognitive science and
+AI can be combined to improve student learning. The repo contains a working
+backend (Django), frontend (React), local LLM integration (Ollama), and
+technical documentation intended for interview and portfolio use. See
+`docs/` for deeper technical guides.
+
+## 🔖 GitHub Topics (recommended)
+
+Add these repository topics on GitHub to improve discoverability:
+
+- adaptive-learning
+- ai-education
+- django
+- react
+- rag
+- cognitive-science
+- llm
+- edtech
+- docker
+- postgres
+
+---
+
 ## 🚀 Key Features
 
 ### For Students

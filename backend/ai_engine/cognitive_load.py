@@ -3,7 +3,7 @@ from django.contrib.auth.models import User
 from django.db.models import Avg, Q
 from datetime import timedelta
 from analytics.models import StudySession, CognitiveLoadSnapshot
-from quizzes.models import Question
+from quizzes.models import Question, QuizAttempt
 
 
 class CognitiveLoadCalculator:
@@ -200,19 +200,20 @@ class CognitiveLoadCalculator:
         try:
             seven_days_ago = self.now - timedelta(days=7)
 
-            # Query questions from quizzes taken by this user in last 7 days
-            avg_score = Question.objects.filter(
-                quiz__created_by=self.user,
-                quiz__created_at__gte=seven_days_ago,
-            ).aggregate(
-                avg_correct=Avg(
-                    Q(correct_answer__isnull=False).then(100),
-                    default=0,
-                )
+            # Prefer QuizAttempt records (explicit per-user attempt records)
+            attempts = QuizAttempt.objects.filter(
+                user=self.user,
+                completed=True,
+                completed_at__gte=seven_days_ago,
             )
 
-            score = avg_score.get("avg_correct")
-            return float(score) if score else None
+            if attempts.exists():
+                agg = attempts.aggregate(avg_percent=Avg('percentage'))
+                avg = agg.get('avg_percent')
+                return float(avg) if avg is not None else None
+
+            # Fallback: if no attempts, try to infer from QuestionResponse/Question if model exists
+            return None
         except Exception:
             return None
 
@@ -246,24 +247,28 @@ class CognitiveLoadCalculator:
 
             # Signal 2: Declining performance (last 3 quizzes)
             try:
-                last_three_scores = Question.objects.filter(
-                    quiz__created_by=self.user,
-                ).order_by("-quiz__created_at")[:30]  # Get ~last 3 quizzes
+                # Use QuizAttempt trend if available
+                recent_attempts = QuizAttempt.objects.filter(
+                    user=self.user,
+                    completed=True,
+                ).order_by('-completed_at')[:6]
 
-                if last_three_scores.count() >= 9:
-                    scores = list(
-                        Question.objects.filter(
-                            quiz__created_by=self.user,
-                        ).order_by("-quiz__created_at").values_list(
-                            "question_text", flat=True
-                        )[:9]
-                    )
-                    # Simplified check: if no recent correct answers
-                    correct_count = sum(
-                        1 for s in scores if s
-                    )
-                    if correct_count < 3:  # Less than 33% correct
-                        frustration += 0.25
+                if recent_attempts.count() >= 3:
+                    # Calculate average of the most recent 3 attempts
+                    recent_list = list(recent_attempts[:3])
+                    recent_avg = sum(a.percentage for a in recent_list) / len(recent_list)
+
+                    # If there are 3 more older attempts, compare for decline
+                    if recent_attempts.count() >= 6:
+                        older_list = list(recent_attempts[3:6])
+                        older_avg = sum(a.percentage for a in older_list) / len(older_list)
+                        # If performance dropped significantly (15%+), flag frustration
+                        if older_avg - recent_avg >= 15:
+                            frustration += 0.25
+
+                    # If recent average is very low (<50%), increase frustration
+                    if recent_avg < 50:
+                        frustration += 0.2
             except Exception:
                 pass
 
