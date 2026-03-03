@@ -63,6 +63,8 @@ export const generateQuiz = (data) => API.post('/ai/quiz/generate/', data);
 export const generateExamPrep = (data) => API.post('/ai/exam-prep/generate/', data);
 export const extractFacts = (data) => API.post('/ai/facts/extract/', data);
 export const askQuestion = (data) => API.post('/ai/ask/', data);
+export const getCognitiveLoad = () => API.get('/ai/cognitive-load/');
+export const getOptimalStudyTimes = () => API.get('/ai/optimal-times/');
 
 // Flashcards
 export const listFlashcards = () => API.get('/flashcards/list/');

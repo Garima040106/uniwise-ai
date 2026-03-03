@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.conf import settings
 from django.core.cache import cache
+from django.utils import timezone
 from accounts.models import University
 from accounts.permissions import IsUniversityScopedAccess
 from courses.models import Course
@@ -14,6 +15,7 @@ from flashcards.models import Flashcard
 from quizzes.models import Quiz, Question
 from django.db.models.functions import Lower
 from .models import AIRequest, ExamPrepSlide, ConceptFact
+from .cognitive_load import CognitiveLoadCalculator
 from .utils import (
     generate_flashcards,
     generate_quiz,
@@ -712,4 +714,88 @@ def ask_university_info_private(request):
         "university_id": university_id,
         "knowledge_base": "university_info",
         "visibility_scope": "private",
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_cognitive_load(request):
+    """
+    Get current cognitive load for authenticated user.
+    Returns cognitive load score, capacity percentage, and learning recommendation.
+    """
+    try:
+        calculator = CognitiveLoadCalculator(request.user.id)
+        result = calculator.calculate()
+
+        if "error" in result:
+            return Response(result, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        cognitive_load = result.get("cognitive_load", 0.5)
+        # Capacity is inverse of load
+        capacity_percent = round((1.0 - cognitive_load) * 100, 1)
+
+        return Response({
+            "cognitive_load": cognitive_load,
+            "capacity_percent": capacity_percent,
+            "recommendation": result.get("recommendation"),
+            "signals": result.get("signals"),
+            "time_of_day": result.get("time_of_day"),
+            "day_of_week": result.get("day_of_week"),
+        })
+    except Exception as e:
+        return Response({
+            "error": str(e),
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_optimal_study_times(request):
+    """
+    Get hour-by-hour study capacity schedule for today (6 AM to 11 PM).
+    Returns capacity levels and quality ratings for each hour.
+    """
+    now = timezone.now()
+    current_hour = now.hour
+
+    schedule = []
+
+    # Attention curve from CognitiveLoadCalculator
+    attention_curve = CognitiveLoadCalculator.ATTENTION_CURVE
+
+    for hour in range(6, 24):  # 6 AM to 11 PM
+        # Get attention capacity for this hour
+        capacity = attention_curve.get(hour, 0.5)
+
+        # Determine quality level based on capacity
+        if capacity >= 0.9:
+            quality = "excellent"
+        elif capacity >= 0.7:
+            quality = "good"
+        elif capacity >= 0.5:
+            quality = "moderate"
+        else:
+            quality = "poor"
+
+        # Format time label
+        if hour < 12:
+            time_label = f"{hour} AM"
+        elif hour == 12:
+            time_label = "12 PM"
+        else:
+            time_label = f"{hour - 12} PM"
+
+        schedule.append({
+            "hour": hour,
+            "time_label": time_label,
+            "capacity": round(capacity, 2),
+            "quality": quality,
+            "is_current": hour == current_hour,
+        })
+
+    return Response({
+        "schedule": schedule,
+        "current_hour": current_hour,
+        "date": now.date().isoformat(),
     })

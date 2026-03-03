@@ -10,4 +10,6 @@ urlpatterns = [
     path("ask/", views.ask_question, name="ask_question"),
     path("ask/university-info/public/", views.ask_university_info_public, name="ask_university_info_public"),
     path("ask/university-info/private/", views.ask_university_info_private, name="ask_university_info_private"),
+    path("cognitive-load/", views.get_cognitive_load, name="get_cognitive_load"),
+    path("optimal-times/", views.get_optimal_study_times, name="get_optimal_study_times"),
 ]

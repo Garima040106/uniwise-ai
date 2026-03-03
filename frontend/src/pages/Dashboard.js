@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getDashboard, getAIStatus, getDocumentProgress } from '../services/api';
+import { getDashboard, getAIStatus, getDocumentProgress, getCognitiveLoad } from '../services/api';
+import CognitiveMeter from '../components/CognitiveMeter';
 
 export default function Dashboard({ user }) {
   const [stats, setStats] = useState(null);
   const [aiStatus, setAiStatus] = useState({ status: 'checking' });
+  const [cognitiveState, setCognitiveState] = useState(null);
   const [docProgress, setDocProgress] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
@@ -11,10 +13,11 @@ export default function Dashboard({ user }) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [dashRes, aiRes, docRes] = await Promise.allSettled([
+      const [dashRes, aiRes, docRes, cogRes] = await Promise.allSettled([
         getDashboard(),
         getAIStatus(),
         getDocumentProgress(),
+        getCognitiveLoad(),
       ]);
 
       if (dashRes.status === 'fulfilled') {
@@ -33,6 +36,12 @@ export default function Dashboard({ user }) {
         });
       }
 
+      if (cogRes.status === 'fulfilled') {
+        setCognitiveState(cogRes.value.data);
+      } else {
+        console.error('Failed to fetch cognitive load:', cogRes.reason);
+      }
+
       if (docRes.status === 'fulfilled') {
         const docs = docRes.value.data || [];
         setDocProgress(docs);
@@ -46,6 +55,18 @@ export default function Dashboard({ user }) {
       setLoading(false);
     };
     fetchData();
+
+    // Set up interval to refresh cognitive load every 5 minutes
+    const cognitiveInterval = setInterval(async () => {
+      try {
+        const cogRes = await getCognitiveLoad();
+        setCognitiveState(cogRes.data);
+      } catch (err) {
+        console.error('Failed to refresh cognitive load:', err);
+      }
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(cognitiveInterval);
   }, []);
 
   if (loading) return <div className="loading">Loading dashboard...</div>;
@@ -63,6 +84,59 @@ export default function Dashboard({ user }) {
       <h2 style={{ marginBottom: '24px', color: '#6c63ff' }}>
         👋 Welcome back, {user?.username}!
       </h2>
+
+      {/* Cognitive Load Section */}
+      {cognitiveState && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ marginBottom: '16px', color: '#ffffff' }}>🧠 Cognitive Status</h3>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr',
+            gap: '20px',
+            alignItems: 'start',
+          }}>
+            <CognitiveMeter
+              load={cognitiveState.cognitive_load}
+              capacity={cognitiveState.capacity_percent}
+            />
+            <div>
+              <div className="card" style={{ marginBottom: 0 }}>
+                <div style={{ marginBottom: '16px' }}>
+                  <h4 style={{ color: '#ffffff', marginBottom: '8px', marginTop: 0 }}>
+                    Recommendation
+                  </h4>
+                  <p style={{ color: '#8888aa', margin: '0' }}>
+                    {cognitiveState.recommendation === 'deep_learning' &&
+                      '✅ Your cognitive capacity is good. This is a great time for deep, focused learning. Consider tackling challenging concepts or new material.'}
+                    {cognitiveState.recommendation === 'review_mode' &&
+                      '⚠️ Your cognitive load is moderate. Switch to review mode—focus on consolidating what you\'ve learned. Review flashcards or revisit past quizzes.'}
+                    {cognitiveState.recommendation === 'break_required' &&
+                      '🛑 Your cognitive load is very high. A break is essential right now. Step away from studying to recharge.'}
+                  </p>
+                </div>
+
+                {cognitiveState.recommendation === 'break_required' && (
+                  <div style={{
+                    background: 'rgba(255, 101, 132, 0.1)',
+                    border: '2px solid #ff6584',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    marginTop: '12px',
+                  }}>
+                    <h4 style={{ color: '#ff6584', marginTop: 0, marginBottom: '8px' }}>⏸️ Break Suggestions</h4>
+                    <ul style={{ color: '#8888aa', fontSize: '13px', margin: '0', paddingLeft: '20px' }}>
+                      <li>Take a 15-30 minute walk outside</li>
+                      <li>Have a healthy snack and drink water</li>
+                      <li>Do some stretching or light exercise</li>
+                      <li>Get away from screens for a bit</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Status Banner */}
       <div className="card" style={{

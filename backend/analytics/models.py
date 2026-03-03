@@ -52,4 +52,82 @@ class SkillSnapshot(models.Model):
 
     class Meta:
         ordering = ["recorded_at"]
-# Create your models here.
+
+
+class CognitiveLoadSnapshot(models.Model):
+    """Tracks a student's cognitive load at a point in time."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cognitive_load_snapshots")
+    cognitive_load = models.FloatField(
+        help_text="Cognitive load score from 0.0 to 1.0",
+    )
+    time_of_day = models.IntegerField(
+        help_text="Hour of day (0-23)",
+    )
+    day_of_week = models.IntegerField(
+        help_text="Day of week (0=Monday, 6=Sunday)",
+    )
+    session_duration_minutes = models.IntegerField(
+        help_text="Duration of current study session in minutes",
+    )
+    recent_quiz_avg = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Average score from recent quizzes",
+    )
+    frustration_score = models.FloatField(
+        help_text="Frustration level score",
+    )
+    recommended_mode = models.CharField(
+        max_length=50,
+        help_text="Recommended learning mode based on cognitive load",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - Load: {self.cognitive_load:.2f} at {self.created_at}"
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["time_of_day"]),
+            models.Index(fields=["day_of_week"]),
+        ]
+
+
+class BreakSession(models.Model):
+    """Tracks break sessions and their impact on cognitive load."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="break_sessions")
+    duration_minutes = models.IntegerField(
+        help_text="Duration of the break in minutes",
+    )
+    started_at = models.DateTimeField(
+        help_text="When the break started",
+    )
+    ended_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the break ended",
+    )
+    break_type = models.CharField(
+        max_length=50,
+        help_text="Type of break (e.g., walk, snack, meditation)",
+    )
+    cognitive_load_before = models.FloatField(
+        help_text="Cognitive load before the break",
+    )
+    cognitive_load_after = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Cognitive load after the break",
+    )
+
+    def __str__(self):
+        return f"{self.user.username} - {self.break_type} break on {self.started_at.date()}"
+
+    class Meta:
+        ordering = ["-started_at"]
+        indexes = [
+            models.Index(fields=["user", "-started_at"]),
+            models.Index(fields=["break_type"]),
+        ]
