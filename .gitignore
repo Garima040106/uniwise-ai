@@ -200,3 +200,7 @@ dmypy.json
 .settings/
 *.sublime-settings
 Thumbs.db
+
+# Local presentations (keep personal copies out of repo)
+Uniwise_AI_Presentation.pptx
+scripts/update_presentation.py
