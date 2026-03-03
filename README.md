@@ -565,13 +565,10 @@ Uniwise AI is licensed under the [MIT License](LICENSE).
 
 ## 🎯 Roadmap
 
-- [ ] WebSocket support for real-time collaboration
-- [ ] Advanced analytics dashboard with Plotly.js
-- [ ] Multi-language support (Spanish, Hindi, Mandarin)
-- [ ] Mobile app (React Native)
-- [ ] OpenAI GPT-4 integration option
-- [ ] Salesforce LMS integration
-- [ ] Accessibility (WCAG 2.1 AA)
+This repository is currently an early prototype. The detailed roadmap is
+maintained separately as a living document in the repository: [docs/ROADMAP.md](docs/ROADMAP.md).
+High-level plans will be tracked there and via GitHub Milestones; items and
+timelines are subject to change as the project evolves.
 
 ---
 
